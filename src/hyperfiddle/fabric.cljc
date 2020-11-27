@@ -8,23 +8,31 @@
   #?(:clj
      (:import
        hyperfiddle.Flow
+       hyperfiddle.NodeDef
+       hyperfiddle.View
        hyperfiddle.Origin
        )))
 
+(defn- node-type [node]
+  (keyword (aget hyperfiddle.NodeDef/__hx_constructs (.. node -def -index))))
+
 (defn compute-executor ; default
-  [& [_id f & args]]
-  (apply (hx->clj f) args))
+  [& [this & args]]
+  (case (node-type this)
+    :From (first args)
+    (let [[f & args] args]
+      (apply (hx->clj f) args))))
 
 (defn tracing-executor [writef]
-  (fn [& [_id f & args]]
-    (let [result (apply (hx->clj f) args)]
-      (writef [_id result])
+  (fn [& [this & args]]
+    (let [result (apply compute-executor this args)]
+      (writef [(.-name this) result])
       result)))
 
 (defn cache-or-compute-executor [cachef]
-  (fn [& [id f & args]]
-    (or (get (cachef) id)
-        (apply compute-executor id f args))))
+  (fn [& [this & args]]
+    (or (get (cachef) (.-name this))
+        (apply compute-executor this args))))
 
 (defn set-executor! [f]
   (set! (. Origin -executor) (clj->hx f)))
@@ -33,12 +41,12 @@
 
 (set! (. Origin -onError) (clj->hx #(throw %)))
 
-(def ^:private ^:dynamic *node-name* nil)
+(defmacro node [name & body]
+  `(doto ~@body
+     (.setName '~name)))
 
 (defmacro defnode [name & body]
-  `(binding [*node-name* '~name] ;; BROKEN: might create many nodes with the
-                                 ;; same name. Instead use `(doto ~@body (.setName name))`
-     (def ~name ~@body)))
+  `(def ~name (node ~name ~@body)))
 
 (defn input [& [on off]]
   (Origin/input *node-name*

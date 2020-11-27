@@ -11,34 +11,33 @@ using hyperfiddle.Meta.X;
   static var onError : Error -> Void = (error) -> trace(error);
   static var executor : Dynamic;
 
-  static function input<A>(?name, ?f) {
-    return new Input<A>(get(), new Push(name, From({
+  static function input<A>(?f) {
+    return new Input<A>(get(), new Push(From({
       var end = null;
       { on: () -> if(f != null) end = f(),
         off: () -> if(end != null) {end(); end = null;} } })));
   }
 
-  static function on<A>(?name, a : View<A>, f : A -> Void) {
-    var out =  new Output(get(), new Push(name, [a.node], Into(f)));
+  static function on<A>(v : View<A>, f : A -> Void) {
+    var out =  new Output(get(), new Push([v.node], Into(f)));
     out.activate();
     return out;
   }
 
-  static function apply(?name, as : Array<View<Dynamic>>, f : Dynamic) {
-    return new View(get(), new Push(name, [for(a in as) a.node], ApplyN(f)));
+  static function apply(ns : Array<View<Dynamic>>, f : Dynamic) {
+    return new View(get(), new Push([for(n in ns) n.node], ApplyN(f)));
   }
 
-  static function applyAsync(?name, as : Array<View<Dynamic>>, f : Dynamic) {
-    return new View(get(), new Push(name, [for(a in as) a.node], ApplyAsync(f)));
+  static function applyAsync(ns : Array<View<Dynamic>>, f : Dynamic) {
+    return new View(get(), new Push([for(n in ns) n.node], ApplyAsync(f)));
   }
 
-  static function pure<A>(?name, a: A) {
-    return new View(get(), new Push(name, Const(a)));
+  static function pure<A>(a: A) {
+    return new View(get(), new Push(Const(a)));
   }
 
-  static function bind<A>(?name, a: View<Dynamic>, f: Dynamic -> View<A>) {
-    // track push.z
-    return new View(get(), new Push(name, [a.node], Bind(f)));
+  static function bind<A>(n: View<Dynamic>, f: Dynamic -> View<A>) {
+    return new View(get(), new Push([n.node], Bind(f)));
   }
 }
 
@@ -46,10 +45,14 @@ using hyperfiddle.Meta.X;
   var F : Flow;
   var node : Push<A>;
   function new(f, n) {F = f; node = n;}
+  function setName(name){ node.setName(name); }
 }
 
 @:publicFields class Input<A> extends View<A> {
-  function put(a : A) {F.resume(node, Val(a));}
+  function put(a : A) {
+    (cast Origin.executor)(node, a);
+    F.resume(node, Val(a));
+  }
   function end() {F.resume(node, End);}
 }
 
@@ -108,7 +111,7 @@ enum Maybe<A> {
   function add(node : Push<Dynamic>) {      // queue
     trace("add "+ node.id + " rank " +node.rank);
     if(node.queued) return;
-    while(queue.length <= node.rank) queue.push([]);
+    while(queue.length <= node.rank) queue.push([]); // priority queue
     queue[node.rank].push(node);
     node.queued = true;
   }
@@ -265,8 +268,11 @@ enum Maybe<A> {
 
   function new(?name, ?as : Array<Push<Dynamic>>, d) {
     def = d;
-    if(as != null) ups = as.copy(); // weakref?
-    if(name != null) this.name = name;
+    if(ns != null) on = ns.copy(); // weakref?
+  }
+
+  function setName(name){
+    this.name = name;
   }
 
   function toString() return 'Push($id, $rank, $def)';
@@ -302,15 +308,15 @@ enum Maybe<A> {
             case Const(x): resume(Val(x));
             case ApplyN(f):
               try{
-                var as = [for(a in inputs) extract(cast a.val)]; trace(as);
-                var b = (cast Origin.executor)(name, f, as); trace(b);
+                var as = [for(a in on) extract(cast a.val)]; //trace(as);
+                var b = (cast Origin.executor)(this, f, as); //trace(b);
                 resume(Val(b));
               } catch (e : Dynamic) {
                 //trace("run e caught, resume with e ", e);
                 resume(Error(e));
               }
             case ApplyAsync(f):
-              (cast Origin.executor)(name, f, [for(a in inputs) extract(cast a.val)],
+              (cast Origin.executor)(this, f, [for(n in on) extract(cast n.val)],
                        err -> F.resume(this, Error(err)),
                        v   -> F.resume(this, Val(v)));
 

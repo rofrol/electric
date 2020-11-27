@@ -29,7 +29,7 @@
 (defn- graph
   ([^View >v] (graph default-node-renderer >v))
   ([rendererf, ^View >v]
-   (let [ast (trace/datafy (.-node >v))]
+   (let [ast (trace/datafy true (.-node >v))]
      (dot/digraph (->> (mapv (juxt :id rendererf) (trace/nodes ast))
                        (into (links ast)))))))
 
@@ -70,3 +70,5 @@
     `(let [[~step-sym end#] (animation ~file-path)]
        ~@body
        (end#))))
+
+

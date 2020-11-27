@@ -10,7 +10,7 @@
       (defnode >b (f/fmap inc >a))
       (defnode >c (f/on >b prn))
       (f/put >a 1))
- (trace/trace >c) => '([>a 1] [>b 2] [>c 2])
+ (trace/snapshot >c) => '([>a 1] [>b 2] [>c 2])
 
  !! (def trace (into {} '([>a 1] [>b 2] [>c 2])))
 
@@ -18,6 +18,6 @@
  !! (f/put >a 1)
  !! (f/replay >a)
  !! (f/put >a 100)
- (trace/trace >c) => '([>a 1] [>b 2] [>c 2])
+ (trace/snapshot >c) => '([>a 1] [>b 2] [>c 2])
 
  )

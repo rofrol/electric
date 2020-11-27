@@ -23,7 +23,7 @@
                  (f/put >a 1)
                  (f/put >a' 1)
                  (f/put >a'' 1))
-  (trace/trace >f))
+  (trace/snapshot >f))
 
 (tests
  (do
@@ -40,7 +40,7 @@
                   (f/put >control :a)
                   (f/put >a 100))
 
-   (trace/trace >x)) => '([>control :a] [>cross 100] [>x [100]]) ;; ✔
+   (trace/snapshot >x)) => '([>control :a] [>cross 100] [>x [100]]) ;; ✔
  )
 
 
