@@ -3,7 +3,7 @@ import hyperfiddle.Meta;
 using Lambda;
 using hyperfiddle.Meta.X;
 
-@:publicFields class Origin {                       // public API singleton
+@:expose @:publicFields class Origin {                       // public API singleton
   static var main : Flow;
   static function get() return if(main != null) main else main = new Flow();
   static function all(f) get().all(f);
@@ -39,6 +39,8 @@ using hyperfiddle.Meta.X;
   static function bind<A>(n: View<Dynamic>, f: Dynamic -> View<A>) {
     return new View(get(), new Push([n.node], Bind(f)));
   }
+
+  static function getNodeDef(){return NodeDef;}
 }
 
 @:publicFields class View<A> {
@@ -61,6 +63,7 @@ using hyperfiddle.Meta.X;
   function off() {F.resume(node, End);} // detach?
 }
 
+@:expose // @:expose is not implemented for enums in JS, circumevented by Origin.getNodeDef.
 enum NodeDef<T> {       // GT the NodeDef values essentially define a live AST of what should be done
   Const<A>(a: A) : NodeDef<A>;
   From<A>(source : {on : () -> Void, off : () -> Void}) : NodeDef<A>;

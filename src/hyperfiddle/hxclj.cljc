@@ -1,9 +1,7 @@
 (ns hyperfiddle.hxclj
-  (:require [minitest :refer [tests]])
-  #?(:clj
-     (:import
-       haxe.lang.VarArgsBase
-       haxe.root.Array)))
+  #?(:clj (:require [minitest :refer [tests]]))
+  #?(:clj (:import haxe.lang.VarArgsBase
+                   haxe.root.Array)))
 
 
 (defn -primary-predicate [v]                                ; this is really bad
@@ -25,10 +23,10 @@
 ;(defmethod hx->clj :default [v] v)
 
 (defmethod clj->hx fn? [f]
-  #?(:cljs (fn [& args] (apply f (seq args)))
-     :clj  (proxy [haxe.lang.VarArgsBase] [-1 -1]           ; constructor params
+  #?(:clj  (proxy [haxe.lang.VarArgsBase] [-1 -1]           ; constructor params
              (__hx_invokeDynamic [args]
-               (apply f (seq args))))))
+               (apply f (seq args))))
+     :cljs f))
 
 (defmethod clj->hx seqable? [xs]
   #?(:cljs (object-array xs)
@@ -37,27 +35,35 @@
                (.push o s))
              o)))
 
-(tests
-  (clj->hx 1) => 1
-  (type (clj->hx (seq '(a)))) => haxe.root.Array
-  (type (clj->hx ['a])) => haxe.root.Array
-  (isa? (class (clj->hx identity)) haxe.lang.Function) => true
-  (isa? (class (clj->hx identity)) haxe.lang.VarArgsBase) => true
-  #_(bases (class (clj->hx identity)))
-  )
+#?(:clj
+   (tests
+    (clj->hx 1) => 1
+    (type (clj->hx (seq '(a)))) => haxe.root.Array
+    (type (clj->hx ['a])) => haxe.root.Array
+    (isa? (class (clj->hx identity)) haxe.lang.Function) => true
+    (isa? (class (clj->hx identity)) haxe.lang.VarArgsBase) => true
+    #_(bases (class (clj->hx identity)))
+    ))
 
-(defmethod hx->clj haxe.root.Array [v!]
-  (let [it (.iterator v!)]
-    (iterator-seq
-      (reify #?(:clj java.util.Iterator)
-        (hasNext [this] (.hasNext it))
-        (next [this] (.next it))))))
+#?(:clj
+   (defmethod hx->clj haxe.root.Array [v!]
+     (let [it (.iterator v!)]
+       (iterator-seq
+        (reify java.util.Iterator
+          (hasNext [this] (.hasNext it))
+          (next [this] (.next it))))))
+   :cljs ;; in cljs, haxe arrays are JS arrays
+   (defmethod hx->clj js/Array [v!] (array-seq v!)))
 
-(defmethod hx->clj haxe.lang.Function [hxf]
-  (fn hx-call-proxy [& args]
-    (.__hx_invokeDynamic hxf (into-array Object args))))
+#?(:clj
+   (defmethod hx->clj haxe.lang.Function [hxf]
+     (fn hx-call-proxy [& args]
+        (.__hx_invokeDynamic hxf (into-array Object args))))
+   :cljs ;; in cljs, haxe functions are JS functions
+   (defmethod hx->clj js/Function [hxf] hxf))
 
-(tests
-  (hx->clj (clj->hx '(a))) => '(a)
-  (hx->clj (clj->hx [:a])) => '(:a)                         ; !
-  )
+#?(:clj
+   (tests
+    (hx->clj (clj->hx '(a))) => '(a)
+    (hx->clj (clj->hx [:a])) => '(:a) ; !
+    ))

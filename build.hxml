@@ -8,5 +8,5 @@
 
 
     --next
-    -js ../assets/DF.js
+    -js out/DF/DF.js
     -D nodejs
