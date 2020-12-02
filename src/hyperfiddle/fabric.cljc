@@ -28,15 +28,14 @@
        (cons (symbol (str class "/" field)) args))))
 
 (defn- node-type [node]
-  (keyword
-   #?(:clj (aget hyperfiddle.NodeDef/__hx_constructs (.. node -def -index))
-      :cljs (-> (static-call Origin getNodeDef)
-                (aget "__constructs__" (.. ^js node -def -_hx_index))))))
+  #?(:clj (aget hyperfiddle.NodeDef/__hx_constructs (.. node -def -index))
+     :cljs (-> (static-call Origin getNodeDef)
+               (aget "__constructs__" (.. ^js node -def -_hx_index)))))
 
 (defn compute-executor ; default
   [& [this & args]]
   (case (node-type this)
-    :From (first args)
+    "From" (first args)
     (let [[f & args] args]
       (apply (hx->clj f) args))))
 
@@ -111,12 +110,12 @@
 
 (defn fmap [f & >as]
   (static-call Origin apply (clj->hx >as)
-               (clj->hx (fn [hx-args]
+               (clj->hx (fn fmap-apply [hx-args]
                           (apply f (hx->clj hx-args))))))
 
 (defn fmap-async [f & >as]
   (static-call Origin applyAsync (clj->hx >as)
-               (clj->hx (fn [hx-args, hx-reject, hx-resolve]
+               (clj->hx (fn fmap-async-apply [hx-args, hx-reject, hx-resolve]
                           (let [reject (hx->clj hx-reject)]
                             (try
                               (-> (apply f (hx->clj hx-args))

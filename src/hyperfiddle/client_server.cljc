@@ -5,7 +5,7 @@
 
 (defnode >a (f/input))
 (defnode >b (f/fmap inc >a))
-(defnode >c (f/on >b (partial prn ">c")))
+#?(:cljs (defnode >c (f/on >b (constantly nil))))
 
 (defn put-in-a [v]
   (f/put >a v))

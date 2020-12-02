@@ -53,7 +53,7 @@
           (hasNext [this] (.hasNext it))
           (next [this] (.next it))))))
    :cljs ;; in cljs, haxe arrays are JS arrays
-   (defmethod hx->clj js/Array [v!] (array-seq v!)))
+   (defmethod hx->clj js/Array [v!] v!))
 
 #?(:clj
    (defmethod hx->clj haxe.lang.Function [hxf]

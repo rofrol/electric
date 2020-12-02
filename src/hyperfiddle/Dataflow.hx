@@ -112,7 +112,7 @@ enum Maybe<A> {
   }
 
   function add(node : Push<Dynamic>) {      // queue
-    trace("add "+ node.id + " rank " +node.rank);
+    // trace("Add "+ node.id + " rank " +node.rank);
     if(node.queued) return;
     while(queue.length <= node.rank) queue.push([]); // priority queue
     queue[node.rank].push(node);
