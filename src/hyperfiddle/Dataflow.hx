@@ -41,6 +41,9 @@ using hyperfiddle.Meta.X;
   }
 
   static function getNodeDef(){return NodeDef;}
+  static function getJust(){return Just;}
+  static function getNothing(){return Nothing;}
+  static function getVal(){return Val;}
 }
 
 @:publicFields class View<A> {
@@ -52,8 +55,11 @@ using hyperfiddle.Meta.X;
 
 @:publicFields class Input<A> extends View<A> {
   function put(a : A) {
-    (cast Origin.executor)(node, a);
-    F.resume(node, Val(a));
+    var b : Maybe<A> = (cast (cast Origin.executor)(node, a));
+    switch (b){
+      case Just(x): F.resume(node, Val(x));
+      case Nothing: {}
+    }
   }
   function end() {F.resume(node, End);}
 }
@@ -86,8 +92,6 @@ enum Maybe<A> {
 
 @:nullSafety(Loose)
 @:publicFields class Flow {                                 // singleton
-  static var count = 0;
-  static function id() {return ++count;}
 
   var lock : Bool = false;
   var frame : Int = 0;                                    // ?
@@ -160,9 +164,11 @@ enum Maybe<A> {
     onError(e);
   }
 
-  function into<A>(n : Push<A>, f : Null<A> -> Void, val : Null<A>) {
-    if(val != null) n.val = Just(val);
-    f(val);
+  function into<A>(n : Push<A>, f : Null<A> -> Void, val : Maybe<A>) {
+    switch (val){
+      case Just(a): {n.val = val; f(a);}
+      case Nothing: {}
+    }
   }
 
   function onError(?e) {
@@ -256,7 +262,7 @@ enum Maybe<A> {
   var q : Null<Push<Dynamic>>; // bind's choice
   var z : Null<Push<Dynamic>>; // bind's output
 
-  var id : Int = Flow.id();
+  var id : Null<Int>;
   var name : Null<Dynamic>;
   var rank : Int = 0;
   var frame : Int = 0;
@@ -312,8 +318,11 @@ enum Maybe<A> {
             case ApplyN(f):
               try{
                 var as = [for(a in on) extract(cast a.val)]; //trace(as);
-                var b = (cast Origin.executor)(this, f, as); //trace(b);
-                resume(Val(b));
+                var b : Maybe<A> = (cast (cast Origin.executor)(this, f, as)); //trace(b);
+                switch (b){
+                  case Just(x): resume(Val(x));
+                  case Nothing: {}
+                }
               } catch (e : Dynamic) {
                 //trace("run e caught, resume with e ", e);
                 resume(Error(e));

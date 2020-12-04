@@ -12,12 +12,13 @@
        hyperfiddle.Flow
        hyperfiddle.NodeDef
        hyperfiddle.View
+       hyperfiddle.Maybe
+       hyperfiddle.Action
        hyperfiddle.Origin
        )))
 
 #?(:cljs (let [hf (aget (js/require "../hyperfiddle/fabric/out/DF/DF.js") "hyperfiddle")]
-           (def ^js Origin  (aget hf "Origin"))
-           (def ^js NodeDef (aget hf "NodeDef"))))
+           (def ^js Origin  (aget hf "Origin"))))
 
 #?(:clj
    (defmacro static-call [class field & args]
@@ -27,28 +28,77 @@
             (cons (symbol (str "." field))))
        (cons (symbol (str class "/" field)) args))))
 
-(defn- node-type [node]
+(defn node-type [node]
   #?(:clj (aget hyperfiddle.NodeDef/__hx_constructs (.. node -def -index))
      :cljs (-> (static-call Origin getNodeDef)
                (aget "__constructs__" (.. ^js node -def -_hx_index)))))
 
+#?(:cljs (def ^:private ^js Just*    (static-call Origin -getSome)))
+#?(:cljs (def ^:private ^js Nothing* (static-call Origin -getNothing)))
+#?(:cljs (def ^:private ^js Val*     (static-call Origin -getVal)))
+
+(defn Just [a]
+  #?(:clj  (Maybe/Just a)
+     :cljs ((Just*) a)))
+
+(defn just? [a]
+  #?(:clj (and (instance? Maybe a)
+               (= 0 (.-index a)))
+     :cljs (and (= "hyperfiddle.Maybe" (aget a "__enum__"))
+                (= 0 (aget a "_hx_index")))))
+
+(defn Nothing []
+  #?(:clj  (Maybe/Nothing)
+     :cljs (Nothing*)))
+
+(defn nothing? [a]
+  #?(:clj (and (instance? Maybe a)
+               (= 1 (.-index a)))
+     :cljs (and (= "hyperfiddle.Maybe" (aget a "__enum__"))
+                (= 1 (aget a "_hx_index")))))
+
+(defn unwrap [ma]
+  (cond
+    (some? ma) #?(:clj  (some-> (.-params ma) (aget 0))
+                  :cljs (.-a ^js ma))
+    :else      (throw (ex-info "Can't unwrap value of this type" {:value ma
+                                                                  :type  (type ma)}))))
+
+(defn Val [a]
+  #?(:clj  (Action/Val a)
+     :cljs ((Val*) a)))
+
+(defmacro with-executor [executor & body]
+  `(let [current-executor# ~(if (:ns &env) ; cljs?
+                              `(aget hyperfiddle.fabric/Origin "executor")
+                              `(.-executor Origin))]
+     (set-executor! ~executor)
+     (let [result# (do ~@body)]
+       (set-executor! current-executor#)
+       result#)))
+
 (defn compute-executor ; default
   [& [this & args]]
   (case (node-type this)
-    "From" (first args)
+    "From" (Just (first args))
     (let [[f & args] args]
-      (apply (hx->clj f) args))))
+      (Just (apply (hx->clj f) args)))))
+
+(defn counter
+  ([] (counter 0))
+  ([start]
+   (let [state (atom (drop start (range)))]
+     (fn []
+       (let [x (first @state)]
+         (swap! state next)
+         x)))))
 
 (defn tracing-executor [writef]
-  (fn [& [this & args]]
-    (let [result (apply compute-executor this args)]
-      (writef [(.-name this) result])
-      result)))
-
-(defn cache-or-compute-executor [cachef]
-  (fn [& [this & args]]
-    (or (get (cachef) (.-name this))
-        (apply compute-executor this args))))
+  (let [id (counter)]
+    (fn [& [this & args]]
+      (let [result (apply compute-executor this args)]
+        (writef [(id) result])
+        result))))
 
 (defn set-executor! [f]
   (set! (. Origin -executor) (clj->hx f)))
@@ -97,16 +147,16 @@
              (if f (f %))))
     s))
 
-#?(:clj
-   (tests
-    (declare >a)
-    !! (def >a (input))
-    !! (put >a 1)                      ; no listener yet, will not propagate
-    (type (-> >a .-node .-val)) => hyperfiddle.Maybe ; last value retained
-    !! (def s (cap >a #_println))
-    @s => nil
-    !! (put >a 2) @s => 2
-    !! (put >a 3) @s => 3))
+;; #?(:clj
+;;    (tests
+;;     (declare >a)
+;;     !! (def >a (input))
+;;     !! (put >a 1)                      ; no listener yet, will not propagate
+;;     (type (-> >a .-node .-val)) => hyperfiddle.Maybe ; last value retained
+;;     !! (def s (cap >a #_println))
+;;     @s => nil
+;;     !! (put >a 2) @s => 2
+;;     !! (put >a 3) @s => 3))
 
 (defn fmap [f & >as]
   (static-call Origin apply (clj->hx >as)
