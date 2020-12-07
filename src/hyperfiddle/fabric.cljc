@@ -71,7 +71,7 @@
 (defmacro with-executor [executor & body]
   `(let [current-executor# ~(if (:ns &env) ; cljs?
                               `(aget hyperfiddle.fabric/Origin "executor")
-                              `(.-executor Origin))]
+                              `Origin/executor)]
      (set-executor! ~executor)
      (let [result# (do ~@body)]
        (set-executor! current-executor#)
@@ -113,6 +113,12 @@
 
 (defmacro defnode [name & body]
   `(def ~name (node ~name ~@body)))
+
+(defn shared
+  #?(:clj  [^View view]
+     :cljs [^js   view])
+  (set! (.. view -node -shared) true)
+  view)
 
 (defn input [& [on off]]
   (static-call Origin input (when on

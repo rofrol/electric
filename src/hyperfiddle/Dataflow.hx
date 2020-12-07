@@ -264,6 +264,7 @@ enum Maybe<A> {
 
   var id : Null<Int>;
   var name : Null<Dynamic>;
+  var shared : Bool = false;
   var rank : Int = 0;
   var frame : Int = 0;
   var queued : Bool = false;
