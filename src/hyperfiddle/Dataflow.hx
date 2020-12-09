@@ -3,7 +3,7 @@ import hyperfiddle.Meta;
 using Lambda;
 using hyperfiddle.Meta.X;
 
-@:expose @:publicFields class Origin {                       // public API singleton
+@:publicFields class Origin {                       // public API singleton
   static var main : Flow;
   static function get() return if(main != null) main else main = new Flow();
   static function all(f) get().all(f);
@@ -18,26 +18,27 @@ using hyperfiddle.Meta.X;
         off: () -> if(end != null) {end(); end = null;} } })));
   }
 
-  static function on<A>(v : View<A>, f : A -> Void) {
-    var out =  new Output(get(), new Push([v.node], Into(f)));
+  static function on<A>(a : View<A>, f : A -> Void) {
+    var out =  new Output(get(), new Push([a.node], Into(f)));
     out.activate();
     return out;
   }
 
-  static function apply(ns : Array<View<Dynamic>>, f : Dynamic) {
-    return new View(get(), new Push([for(n in ns) n.node], ApplyN(f)));
+  static function apply(as : Array<View<Dynamic>>, f : Dynamic) {
+    return new View(get(), new Push([for(a in as) a.node], ApplyN(f)));
   }
 
-  static function applyAsync(ns : Array<View<Dynamic>>, f : Dynamic) {
-    return new View(get(), new Push([for(n in ns) n.node], ApplyAsync(f)));
+  static function applyAsync(as : Array<View<Dynamic>>, f : Dynamic) {
+    return new View(get(), new Push([for(a in as) a.node], ApplyAsync(f)));
   }
 
   static function pure<A>(a: A) {
     return new View(get(), new Push(Const(a)));
   }
 
-  static function bind<A>(n: View<Dynamic>, f: Dynamic -> View<A>) {
-    return new View(get(), new Push([n.node], Bind(f)));
+  static function bind<A>(a: View<Dynamic>, f: Dynamic -> View<A>) {
+    // track push.z
+    return new View(get(), new Push([a.node], Bind(f)));
   }
 
   static function getNodeDef(){return NodeDef;}
@@ -116,9 +117,9 @@ enum Maybe<A> {
   }
 
   function add(node : Push<Dynamic>) {      // queue
-    // trace("Add "+ node.id + " rank " +node.rank);
+    trace("add "+ node.id + " rank " +node.rank);
     if(node.queued) return;
-    while(queue.length <= node.rank) queue.push([]); // priority queue
+    while(queue.length <= node.rank) queue.push([]);
     queue[node.rank].push(node);
     node.queued = true;
   }
@@ -218,7 +219,12 @@ enum Maybe<A> {
       case Const(v): {
         // if we're in an on, flow the first time?
         // if we're in a push, don't interrupt?
-        /*if (!firstTime)*/ resume(a, Val(v)); // the lock does the right thing here
+        /*if (!firstTime)*/
+        var b : Maybe<Dynamic> = (cast (cast Origin.executor)(a, v)); // identity or pending
+        switch (b){
+          case Just(x): resume(a, Val(x));
+          case Nothing: {}
+        }
       }
       case From(source):
         if (!firstTime) if(source.on != null) source.on();
@@ -276,9 +282,9 @@ enum Maybe<A> {
   var next : Null<Push<Dynamic>>;
   var prev : Null<Push<Dynamic>>;
 
-  function new(?name, ?as : Array<Push<Dynamic>>, d) {
+  function new(?as : Array<Push<Dynamic>>, d) {
     def = d;
-    if(ns != null) on = ns.copy(); // weakref?
+    if(as != null) ups = as.copy(); // weakref?
   }
 
   function setName(name){
@@ -313,13 +319,19 @@ enum Maybe<A> {
           switch(def) {
             case Into(f): {
               var a : Dynamic = inputs[0].val;
-              F.into(this, cast f, extract(cast a));
+              F.into(this, cast f, (cast a));
             }
-            case Const(x): resume(Val(x));
+            case Const(x): {
+              var b : Maybe<A> = (cast (cast Origin.executor)(this, x)); // identity or pending
+              switch (b){
+                  case Just(x): resume(Val(x));
+                  case Nothing: {}
+              }
+            }
             case ApplyN(f):
               try{
-                var as = [for(a in on) extract(cast a.val)]; //trace(as);
-                var b : Maybe<A> = (cast (cast Origin.executor)(this, f, as)); //trace(b);
+                var as = [for(a in inputs) extract(cast a.val)]; trace(as);
+                var b : Maybe<A> = (cast (cast Origin.executor)(this, f, as)); trace(b);
                 switch (b){
                   case Just(x): resume(Val(x));
                   case Nothing: {}
@@ -329,7 +341,7 @@ enum Maybe<A> {
                 resume(Error(e));
               }
             case ApplyAsync(f):
-              (cast Origin.executor)(this, f, [for(n in on) extract(cast n.val)],
+              (cast Origin.executor)(this, f, [for(a in inputs) extract(cast a.val)],
                        err -> F.resume(this, Error(err)),
                        v   -> F.resume(this, Val(v)));
 
@@ -341,7 +353,7 @@ enum Maybe<A> {
               var a : Dynamic = cast extract(cast inputs[0].val); // control
               trace("bind a", a);
               try {
-                var mb : Dynamic = (cast Origin.executor)(name, f, a); // user crash
+                var mb : Dynamic = (cast Origin.executor)(this, f, a); // user crash
                 var mb : View<Dynamic> = cast mb; // user type error
                 q = mb.node;
                 trace("bind q", q);
