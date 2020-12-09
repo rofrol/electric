@@ -1,0 +1,402 @@
+#+PROPERTY: header-args :tangle dynamic.cljc :comments no :noweb yes :exports both
+#+EXCLUDE_TAGS: noexport
+#+OPTIONS: toc:nil
+
+* Dataflow as a value
+
+#+begin_src clojure :results none :exports none
+(ns hyperfiddle.dynamic
+  (:require [clojure.pprint :refer [pprint print-table]]
+            [minitest :refer [tests]]))
+#+end_src
+
+** A trace is a stream of operations
+
+   It’s a steam of full sentences I could enunciate/express on the phone for
+   someone else to draw on a whiteboard:
+
+   1. =create= a node named =>control=.
+   2. =create= a node named =>cross=.
+   3. =attach= =>cross= to =>control=.
+   4. =create= a node named =>z=.
+   5. =attach= =>z= to =>cross=
+   6. =resume= computation for =>control= with =:p=.
+   7. =resume= computation for =>cross= with =:p=.
+   8. =create= a node named =>p=
+   9. =attach= =>z= to =>p=
+   10. =resume= computation for =>p= with =1=.
+   11. =resume= computation for =>z= with =1=.
+
+
+   Removing noise, we encode the same statements as:
+
+   #+NAME: sentences
+   | verb   | subject  | object   |
+   |--------+----------+----------|
+   | create | >control |          |
+   | create | >cross   |          |
+   | attach | >cross   | >control |
+   | create | >z       |          |
+   | attach | >z       | >cross   |
+   | resume | >control | :p       |
+   | resume | >cross   | :p       |
+   | create | >p       |          |
+   | attach | >z       | >p       |
+   | resume | >p       | 1        |
+   | resume | >z       | 1        |
+
+
+   Which maps to this code:
+
+   #+begin_src clojure :results none :exports none
+   <<utils>>
+   #+end_src
+
+   #+begin_src clojure :var sentences=sentences :results output
+   (def trace (from-table sentences))
+   (pprint trace)
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   ((create >control )
+    (create >cross )
+    (attach >cross >control)
+    (create >z )
+    (attach >z >cross)
+    (resume >control :p)
+    (resume >cross :p)
+    (create >p )
+    (attach >z >p)
+    (resume >p 1)
+    (resume >z 1))
+   #+end_example
+
+
+   We need input nodes (create) because apply nodes requires them. If apply
+   nodes were only arity-1, we could skip input nodes (simplify).
+
+
+** The flow is a registry
+
+   Nodes are uniquely identified. For each node, an identity is either provided
+   or generated (gensymed). We can manualy look up a node or register it in a
+   flow by =id= (or =name=, the two terms being interchangeable).
+
+   #+begin_src clojure
+   (defn id [node] (when node (.-id node)))
+   #+end_src
+
+   #+RESULTS:
+   : #'minitest/id
+
+   The flow being dynamic, nodes can get registered or unregistered by the flow
+   itself. The flow is in charge of it’s own bookkeeping.
+
+   Node identities are local to a flow. The flow can therefore be considered as
+   a namespace.
+
+   #+begin_src clojure
+   (def flow (new hyperfiddle.Flow))
+   #+end_src
+
+   #+RESULTS:
+   : #'minitest/flow
+
+   #+begin_src clojure :results output
+   (tests
+    (.lookup flow '>a)      => nil
+    (id (.create flow '>a)) => '>a
+    (id (.lookup flow '>a)) => '>a
+    )
+   #+end_src
+
+
+** We can execute a trace operation against a flow
+
+   A trace operations describes /what/ to do on one ore more objects. Executing
+   an operation against a flow describes in /which context/ or /where/ to do it.
+
+   - what :: =create= node =>p=
+   - where :: on flow =f=
+
+   To localize (provide a context) to an operation, we delegate the execution to
+   the flow:
+    #+begin_src clojure
+    (defn execute! [flow [verb subject object]]
+      (case verb
+        create (.create flow subject)
+        resume (.resume flow subject object)
+        attach (.attach flow subject object)))
+    #+end_src
+
+    #+RESULTS:
+    : #'hyperfiddle.dynamic/execute!
+
+
+
+** The flow can attach or resume nodes
+
+   NOTE: node creation is a user-land concern.
+
+
+*** Attaching
+    Flow dynamism is implemented via =bind=.
+    #+begin_src haskell :tangle no
+    bind :: Monad m => m a -> (a -> m b) -> m b
+    #+end_src
+
+    Bind returns an =m b=, in other words a node. It’s up to the user-provided
+    function =(a -> m b)= to produce this node. Three node constructors are
+    available:
+    - =pure v= builds a constant node,
+    - =input=  builds an input node.
+    - =sequence= joins a list of nodes in a single one, such that
+      #+begin_src haskell :tangle no
+      sequence :: Monad m => t (m a) -> m (t a)
+      -- Examples:
+      -- sequence :: Monad m => [m a]     -> m [a]
+      -- sequence ::            [Maybe a] -> Maybe [a]
+      -- sequence [(Just 1) (Just 2)] = (Just [1 2])
+      #+end_src
+    #  TODO: =From= and =Const= defs might be deprecated
+
+
+    This bind expression can be represented as a diagram:
+    #+begin_src clojure :eval no
+    (declare >p)
+    (declare >q)
+    (declare >control)
+    (def >cross (bind >control (fn [c] (case c :p >p :q >q))))
+    (def >z (fmap identity >cross))
+    (resume >control :p)
+    #+end_src
+
+    #+NAME: bind_dot
+    #+begin_src dot :file bind.png :tangle no
+    digraph bind {
+        control [label="control\n:p"]
+        control -> cross [dir=back]
+        control -> cross [dir=back, color="red"]
+        cross -> z:ne [style=dotted, color="lightgray", label=ref]
+        {rank=same; cross -> p [style=dotted, color="lightgray", minlen=2, label=ref]; q}
+        z:e -> p [color="lightgreen", dir=both, label=water]
+        unknown_source [style=invisible]
+        unknown_source -> p [dir=back, color="red"]
+        unknown_source -> p [dir=back]
+        z -> cross
+        z -> cross [color="red"]
+        cross -> control [color="lightgreen", dir=both, label=water]
+    }
+    #+end_src
+
+    #+RESULTS: bind_dot
+    [[file:bind.png]]
+
+
+    Where:
+    - black arrows represents the static topology,
+    - green arrows represents how values flows (water in pipes),
+    - gray dashed arrows represents the internal pointers =bind= requires to
+      provide dynamism.
+    - red arrows represents the lifecycle. For instance, if no one listens to
+      =z=, then =cross= should detach =p= from =z=.
+
+    The above diagrams shows two ASTs: =control -> cross= and =p -> z=. Even
+    if gray and green dashed arrows seems to indicate these two trees are
+    connected, values (water) never flows between them.
+
+*** Resuming
+    The flow resumes a node on its own when:
+    - a new constant node (pure) was attached, and should propagate it’s
+      constant value forwards;
+    - an asynchronous operation (fmap-async) completed and the produced values
+      need to be propagated forwards.
+
+
+** Nodes are uniquely identified
+
+   As seen in [[The flow is a registry][The flow is a registry]], nodes are uniquely identified. If an
+   identifier is not provided, we must generate one in a deterministic way.
+
+   Here are various strategies we’ve been exploring.
+
+
+*** ✗ Serial integers
+    An always increasing integer (=[0..n[=) can be used to identify unidentified
+    nodes.
+
+    #+begin_src txt :exports code :eval no :tangle no
+    next_id ← iterator(0,1..∞)
+    function identify_node_id(node) :
+      if node.id is not set
+        node.id ← next_id()
+      return node
+    #+end_src
+
+    The iterator being stateful, only one party (server or client) can identify
+    traced nodes, effectively preventing us to synchronize two already existing
+    flows. There are no guarantees both flows will evaluate in the same order on
+    both machines, therefore no guarantees nodes won’t be misaligned.
+
+
+*** ✗ Path-based identifier
+
+    In a DAG, a node can be identified by a its path. A node path is a trace of
+    parent’s ids leading to this node.
+
+    #+begin_src dot :file path.png :tangle no
+    digraph path {
+      a -> b
+      a’ -> b
+      b -> c
+      b -> d
+      c -> d
+      d -> e
+      e -> f
+      e -> g
+      e -> h
+    }
+    #+end_src
+
+    #+RESULTS:
+    [[file:path.png]]
+
+    There are multiple paths to =g=:
+    - =a -> b -> c -> d -> e -> 1= (1 because g is e’s child at position 1)
+    - =a -> b -> d -> e -> 1=
+    - =a -> b -> c -> d -> e -> 1=
+    - =a’ -> b -> d -> e -> 1=
+
+    Since we need uniquely identify a node, we must ensure that for any given
+    node, all of potential paths always form an injective function:
+    - two nodes can’t have the same path,
+    - the path’s entry point exists and is accessible via the flow registry,
+    - a dynamic change in the topology (=bind=) doesn’t break the path.
+
+*** ✔ UUID
+
+    If node identifiers are fully-random (v4) UUIDs, then the consuming party
+    (the client for instance) can’t guess any identifiers. Therefore:
+
+    - the producing party is in charge of:
+      - naming nodes,
+      - producing a correct topology over time.
+    - the consuming party is fully passive,
+    - consumer and producer have to agree on a coordination point so the
+      consumer knows where (which id) to attach to.
+
+    NOTE: We decided to explore this option. Our client will have to ask for a
+    point on the server (the route), and the server will have to produce a flow
+    over time for this point.
+
+
+** The server traces only what’s required
+
+   The client can ask for a subset of the trace, so it asks the server to
+   filter it. The server got a whitelist of what’s exposed to clients. In
+   GraphQL terms, it would correspond to:
+   - the server got:
+     - a list of exposed handlers,
+     - a list of authorized attributes,
+   - the client asks for a set of attributes (default =#"*"=).
+
+   The server will only trace what’s whilelisted, and apply the client filter.
+
+   | Client                   | Server         |
+   |--------------------------+----------------|
+   | Hey                      |                |
+   |                          | Hey            |
+   |                          |                |
+   | Please trace for point A |                |
+   |                          | Ok             |
+   |                          |                |
+   |                          | #Node hf.x     |
+   |                          | #Node foo.a    |
+   |                          | #Node hf.y     |
+   |                          | #Node bar.b    |
+   |                          | #Node hf.z     |
+   |                          |                |
+   | Please trace for point A |                |
+   | I’m only interested in   |                |
+   | #"hf.*" nodes            |                |
+   |                          | Ok             |
+   |                          |                |
+   |                          | #Node hf.x     |
+   |                          |                |
+   |                          | #Node hf.y     |
+   |                          |                |
+   |                          | #Node hf.z     |
+   |                          |                |
+   | Please trace for point B |                |
+   | I’m only interested in   |                |
+   | #"password.*" nodes      |                |
+   |                          | B is forbidden |
+   |--------------------------+----------------|
+
+
+
+** Client and server shares a coordination point
+
+   TODO
+
+
+* Misc                                                             :noexport:
+  :PROPERTIES:
+  :UNNUMBERED: notoc
+  :END:
+
+
+   #+NAME: utils
+   #+begin_src clojure :tangle no
+     (defn from-table "Parses an org-mode table to clojure"
+       [rows]
+       (for [row rows]
+         (for [cell row]
+           (if (string? cell)
+             (clojure.edn/read-string cell)
+             cell))))
+   #+end_src
+
+   #+RESULTS: utils
+   : #'hyperfiddle.dynamic/from-table
+
+
+* Scratch Zone                                                     :noexport:
+  :PROPERTIES:
+  :UNNUMBERED: notoc
+  :END:
+
+** Binding steps
+   #+begin_src dot :file /tmp/bind_before.png :tangle no
+   digraph g {
+       control -> cross [dir=back, label=" ups"]
+       cross -> z [dir=back, label=" ups"]
+       {rank=same; cross; p; q;}
+   }
+   #+end_src
+
+   #+RESULTS:
+   [[file:/tmp/bind_before.png]]
+
+   #+begin_src dot :file /tmp/bind_z_listened.png :tangle no
+   digraph g {
+       control:sw -> cross:nw [dir=back label=ups]
+       cross:sw -> z:nw [dir=back label=ups]
+       z:ne -> cross:se [color="red" label=on]
+       cross:ne -> control:se [color="red" label=on]
+       {rank=same; cross; p; q;}
+   }
+   #+end_src
+
+   #+RESULTS:
+   [[file:/tmp/bind_z_listened.png]]
+
+
+
+   #+begin_src dot :file /tmp/bind_after_cross.png :tangle no :exports none
+   <<bind_dot>>
+   #+end_src
+
+   #+RESULTS:
+   [[file:/tmp/bind_after_cross.png]]
