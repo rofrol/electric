@@ -80,7 +80,9 @@
 (defn compute-executor ; default
   [& [this & args]]
   (case (node-type this)
-    "From" (Just (first args))
+    ("Const" "From") (Just (first args))
+    "Bind"           (let [[f & args] args]
+                       (apply (hx->clj f) args))
     (let [[f & args] args]
       (Just (apply (hx->clj f) args)))))
 
@@ -94,10 +96,12 @@
          x)))))
 
 (defn tracing-executor [writef]
-  (let [id (counter)]
+  (let [next-id (counter)]
     (fn [& [this & args]]
-      (let [result (apply compute-executor this args)]
-        (writef [(id) result])
+      (let [result (apply compute-executor this args)
+            id     (or (.-id this) (next-id))]
+        (set! (.-id this) id)
+        (writef [id result])
         result))))
 
 (defn set-executor! [f]
@@ -179,6 +183,9 @@
                                   (p/catch reject))
                               (catch Throwable t
                                 (reject t))))))))
+
+(defn sequence [>as]
+  (apply fmap vector >as))
 
 #?(:clj
    (tests
@@ -343,8 +350,9 @@
     (class (try @(cap (bindR (pure 1) identity)) (catch Throwable e e)))
     => nil #_haxe.Exception
     @(cap (pure 1)) => 1               ; recovered
+    ))
 
-(defn bind [>a f] (Origin/bind *node-name* >a (clj->hx f)))
+(defn bind [>a f] (Origin/bind >a (clj->hx f)))
 
 #?(:clj
    (tests
