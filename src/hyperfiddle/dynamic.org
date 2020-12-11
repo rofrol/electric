@@ -338,7 +338,56 @@
 
 ** Client and server shares a coordination point
 
-   TODO
+   As we’ve seen in [[*✔ UUID][UUID]], one of the two party is in charge of naming nodes,
+   while the other one is fully passive. For the passive one (client) to attach
+   to a node, the server at least need to provide an entry point. In
+   Hyperfiddle’s case the fiddle name seems to be a perfect coordination point,
+   since:
+   - a fiddle name is unique (namespaced),
+   - there’s a unique fiddle root per page,
+   - the fiddle name is provided by the client, so it already knows the entry
+     point,
+   - for each fiddle there’s a unique set of parameters (inputs),
+   - we can always resolve a fiddle’s parameters names from the fiddle name.
+
+
+   | Client                       | Server                        |
+   |------------------------------+-------------------------------|
+   | Please give me               |                               |
+   | this function =users/emails= |                               |
+   |                              | Here is an input #0           |
+   |                              | for =users/emails=.           |
+   |                              | Awaiting for a route          |
+   |                              |                               |
+   | Put #0 ="alice"=             |                               |
+   |                              | Result: ["alice@example.com"] |
+
+
+** Asking for the trace is optional
+
+   | Client                  | Server                            |
+   |-------------------------+-----------------------------------|
+   | Please TRACE            |                                   |
+   | function =users/emails= |                                   |
+   |                         | Here is an input #0               |
+   |                         | for =users/emails=.               |
+   |                         | Awaiting for a route              |
+   |                         |                                   |
+   | Put #0 =`["alice"]=     |                                   |
+   |                         | resume #0 =["alice"]=             |
+   |                         | node #1 -> #0  ;; bind            |
+   |                         | node #2        ;; pure            |
+   |                         | node #3 -> #2  ;; sequence        |
+   |                         | resume #2 ="alice@example.com"    |
+   |                         | resume #3 = ["alice@example.com"] |
+   |                         |                                   |
+   |                         | Result: ["alice@example.com"]     |
+
+   We notice:
+   - data duplication between the last traced node and the result itself,
+   - #1 is a bind node,
+   - #3 is a sequence node.
+
 
 
 * Misc                                                             :noexport:
