@@ -430,6 +430,36 @@
      - resume with values for nodes that needs to resume.
 
 
+** A flow doesn't represents the domain
+
+   The trace doesn’t represents the domain either. The trace represents
+   (topology + values) over time. Given a flow we can display a flowchart, while
+   end users wants to render UIs matching their domain. The domain is higher up
+   the abstraction stack. We therefore need a relationship between a flow and
+   the domain, such that end users can express a flow-backed UI in term of their
+   domain.
+
+   1. A domain is a contextualization of data (information), and their potential
+      relationships.
+   2. A business process is composition of operations on the domain.
+   3. A UI is a representation of a one or more business processes, including:
+      1. their descriptions (meta-info like name, doc, location,…)
+      2. some or all of their inputs,
+      3. some or all of their outputs.
+   4. A program is a declarative, executable representation of a business
+      process (code is data).
+   5. A an execution stack trace, is usually a chain of business processes
+      identifiers (function names), and:
+      1. it doesn't contain data,
+      2. it comes with meta-information about the BP (source lines),
+      3. it only show one path the execution took, it doesn't show potential
+         branches.
+
+   If code is a declarative, executable business process, then it is formal,
+   while our flow is effective. While an execution stack trace is a single path
+   at a specific point in time, our flow is a union of all taken paths over
+   time.
+
 
 * Misc                                                             :noexport:
   :PROPERTIES:
