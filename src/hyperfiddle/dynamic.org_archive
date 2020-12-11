@@ -47,3 +47,41 @@ Archived entries from file /Users/geoffrey/Desktop/hyperfiddle-app/hyperfiddle/f
 
   #+RESULTS:
   [[file:.gen/auth_service.png]]
+
+*  About traces (stack, graph)
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2020-12-11 Fri 17:33
+  :ARCHIVE_FILE: ~/Desktop/hyperfiddle-app/hyperfiddle/fabric/src/hyperfiddle/dynamic.org
+  :ARCHIVE_OLPATH: Dataflow as a value
+  :ARCHIVE_CATEGORY: dynamic
+  :END:
+
+  What information do we need to correlate all taken paths over time with their
+  respective business processes? Let’s compare one path and a union of paths:
+  - a single path is a linked list while a union of paths is a graph;
+  - a single path is directed and acyclic, just like our flow (arbitrarily);
+  - a single path is always connexe[fn::From latin connexus, made of a single
+    unit, forms a single graph, not disjoint.], while our flow got special
+    junction points at bind node. But we could argue our bind implementation
+    still make it connexe because of bind’s internal pointers (z and q).
+  - While our graph is a union of paths, parallel paths comes in order.
+    - Join nodes for instance are ordered. They expects their inputs to match
+      the function signature.
+    - Sequence nodes are also ordered as they produce an ordered collection.
+      Swapping/adding/removing inputs should swap/add/remove elements in the
+      resulting collection accordingly.
+
+  For each point of the trace, we need to know:
+  - the function name,
+  - the function *effective* parameters.
+    - we don’t care about formal parameters because we don’t care about their
+      names, only their count and position.
+  - which points lead to the current one (parents), which is implicit by node
+    inputs.
+
+
+  To contextualize flowing data, we need a way to correlate nodes to the domain
+  that produced them. For instance:
+  - =users/list-emails= is a process,
+  - ="alice"= is a piece of information,
+  - ="fmap users/list-emails"=

@@ -460,6 +460,48 @@
    at a specific point in time, our flow is a union of all taken paths over
    time.
 
+** UIs are representations of business process interfaces
+
+   #+begin_src plantuml :file .gen/auth_wireframe.png
+   @startsalt
+   {^"compute-bmi"
+   Age    | "25   "     | ages: 2-120
+   Gender | (X) Male   | () Female
+   Height | "5  " | feet | "10 " | inches
+   Weight | "160   " | pounds
+
+   [ Calculate ]
+
+   Your BMI is: | "    "
+   }
+
+   @endsalt
+   #+end_src
+
+   #+RESULTS:
+   [[file:.gen/auth_wireframe.png]]
+
+
+   This user interface is made of:
+   - inputs (form fields) -> formal and effective parameters,
+   - start trigger (submit button, link, …) -> =apply= inputs to the
+     =compute-bmi= function,
+   - potential outputs.
+
+   The =compute-bmi= implementation is up to the end user, for us it’s a
+   blackbox. We can only wrap its interface to:
+   1. execute it (noop wrapping)
+   2. cache it (memoize)
+   3. pre-process or post-process its inputs and outputs (middleware, visitor)
+   4. adapt it to a different execution context (module, api).
+
+   If we wrap all user-provided functions and overload the execution mechanism,
+   we can cache their inputs and outputs to:
+   - replay them in a different context,
+   - format their inputs and outputs,
+   - …
+
+
 
 * Misc                                                             :noexport:
   :PROPERTIES:
