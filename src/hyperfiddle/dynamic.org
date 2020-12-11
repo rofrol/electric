@@ -388,6 +388,47 @@
    - #1 is a bind node,
    - #3 is a sequence node.
 
+** Sequences versions are diffed
+
+   A sequence is a join point, typically used with bind nodes:
+
+   #+begin_src haskell
+   sequence :: t (m a) -> m (t a)
+   #+end_src
+
+
+   For instance, src_clojure[:eval no]{(sequence [>a >b >c])} can be represented as:
+
+   #+begin_src dot :file .gen/sequence.png
+   digraph sequence{
+   a [label=">a\nJust 1"]
+   b [label=">b\nJust 2"]
+   c [label=">c\nJust 3"]
+   sequence [label="sequence\nJust [1 2 3]"]
+   a -> sequence [dir=back]
+   b -> sequence [dir=back]
+   c -> sequence [dir=back]
+   }
+   #+end_src
+
+   #+RESULTS:
+   [[file:.gen/sequence.png]]
+
+
+   When a bind reruns and now returns src_clojure[:eval no]{(sequence [>a >c])},
+   we would like to trace that =>b= is gone, but reuse the existing instance.
+   Otherwise, we would have to:
+   - re-create a whole topology for =>a=, =>c= and the new =sequence= node;
+   - detach the old =sequence=, old =>a=, old =>b= and old =>c=;
+   - trace their detachment
+   - resume with new values.
+
+     Instead we want to:
+     - diff old =sequence= and new =sequence=,
+     - mutate old =sequence= to match new =sequence=
+     - trace attachments and detachments at the *correct* sequence index
+     - resume with values for nodes that needs to resume.
+
 
 
 * Misc                                                             :noexport:
