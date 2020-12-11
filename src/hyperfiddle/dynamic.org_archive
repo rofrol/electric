@@ -1,0 +1,49 @@
+#    -*- mode: org -*-
+
+
+Archived entries from file /Users/geoffrey/Desktop/hyperfiddle-app/hyperfiddle/fabric/src/hyperfiddle/dynamic.org
+
+
+* Authentication use case
+  :PROPERTIES:
+  :ARCHIVE_TIME: 2020-12-11 Fri 16:34
+  :ARCHIVE_FILE: ~/Desktop/hyperfiddle-app/hyperfiddle/fabric/src/hyperfiddle/dynamic.org
+  :ARCHIVE_OLPATH: Dataflow as a value/A flow doesn't represents the domain
+  :ARCHIVE_CATEGORY: dynamic
+  :END:
+  Let’s consider this well known user-facing service:
+
+  #+begin_src plantuml :file .gen/auth_service.png
+  left to right direction
+  actor User
+  package AuthenticationService {
+          usecase "Sign in" as SI
+          usecase FP as "
+          Forgot password
+          --
+          - email
+          "
+          usecase "Logout" as L
+          usecase Creds as "
+          Provide Credentials
+          --
+          - email
+          - password
+          "
+          usecase InitialCreds as "
+          Confirm Credentials
+          --
+          - confirm password
+          - validate email
+          "
+          SI ..> Creds : includes
+          InitialCreds .> Creds : extends
+          L ..> (Authenticated) : includes
+  }
+  User -- SI
+  User -- FP
+  User -- L
+  #+end_src
+
+  #+RESULTS:
+  [[file:.gen/auth_service.png]]

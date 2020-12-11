@@ -1,14 +1,16 @@
-#+PROPERTY: header-args :tangle dynamic.cljc :comments no :noweb yes :exports both
+#+PROPERTY: header-args :noweb yes :exports both
+#+PROPERTY: header-args:clojure :tangle dynamic.cljc :comments both
+#+PROPERTY: header-args:dot :exports result
 #+EXCLUDE_TAGS: noexport
 #+OPTIONS: toc:nil
 
 * Dataflow as a value
 
-#+begin_src clojure :results none :exports none
-(ns hyperfiddle.dynamic
-  (:require [clojure.pprint :refer [pprint print-table]]
-            [minitest :refer [tests]]))
-#+end_src
+  #+begin_src clojure :results none :exports none
+  (ns hyperfiddle.dynamic
+    (:require [clojure.pprint :refer [pprint print-table]]
+              [minitest :refer [tests]]))
+  #+end_src
 
 ** A trace is a stream of operations
 
@@ -48,11 +50,8 @@
 
    Which maps to this code:
 
-   #+begin_src clojure :results none :exports none
-   <<utils>>
-   #+end_src
-
-   #+begin_src clojure :var sentences=sentences :results output
+   #+begin_src clojure :var sentences=sentences :results output :noweb strip-export
+   <<org-utils>>
    (def trace (from-table sentences))
    (pprint trace)
    #+end_src
@@ -97,13 +96,13 @@
    a namespace.
 
    #+begin_src clojure
-   (def flow (new hyperfiddle.Flow))
+   (def flow (new hyperfiddle.Flow))                           (ref:flow-instance)
    #+end_src
 
    #+RESULTS:
    : #'minitest/flow
 
-   #+begin_src clojure :results output
+   #+begin_src clojure :results output :exports silent
    (tests
     (.lookup flow '>a)      => nil
     (id (.create flow '>a)) => '>a
@@ -118,20 +117,20 @@
    an operation against a flow describes in /which context/ or /where/ to do it.
 
    - what :: =create= node =>p=
-   - where :: on flow =f=
+   - where :: on flow [[(flow-instance)][=f=]]
 
    To localize (provide a context) to an operation, we delegate the execution to
    the flow:
-    #+begin_src clojure
-    (defn execute! [flow [verb subject object]]
-      (case verb
-        create (.create flow subject)
-        resume (.resume flow subject object)
-        attach (.attach flow subject object)))
-    #+end_src
+   #+begin_src clojure
+   (defn execute! [flow [verb subject object]]
+     (case verb
+       create (.create flow subject)
+       resume (.resume flow subject object)
+       attach (.attach flow subject object)))
+   #+end_src
 
-    #+RESULTS:
-    : #'hyperfiddle.dynamic/execute!
+   #+RESULTS:
+   : #'hyperfiddle.dynamic/execute!
 
 
 
@@ -155,9 +154,9 @@
       #+begin_src haskell :tangle no
       sequence :: Monad m => t (m a) -> m (t a)
       -- Examples:
-      -- sequence :: Monad m => [m a]     -> m [a]
-      -- sequence ::            [Maybe a] -> Maybe [a]
-      -- sequence [(Just 1) (Just 2)] = (Just [1 2])
+      -- sequence :: Monad m => [m a] -> m [a]
+      -- sequence :: [Maybe a] -> Maybe [a]
+      -- sequence [(Just 1) (Just 2)] = Just [1 2]
       #+end_src
     #  TODO: =From= and =Const= defs might be deprecated
 
@@ -245,22 +244,22 @@
     In a DAG, a node can be identified by a its path. A node path is a trace of
     parent’s ids leading to this node.
 
-    #+begin_src dot :file path.png :tangle no
+    #+begin_src dot :file .gen/path.png :tangle no
     digraph path {
-      a -> b
-      a’ -> b
-      b -> c
-      b -> d
-      c -> d
-      d -> e
-      e -> f
-      e -> g
-      e -> h
+    a -> b
+    a’ -> b
+    b -> c
+    b -> d
+    c -> d
+    d -> e
+    e -> f
+    e -> g
+    e -> h
     }
     #+end_src
 
     #+RESULTS:
-    [[file:path.png]]
+    [[file:.gen/path.png]]
 
     There are multiple paths to =g=:
     - =a -> b -> c -> d -> e -> 1= (1 because g is e’s child at position 1)
@@ -273,6 +272,7 @@
     - two nodes can’t have the same path,
     - the path’s entry point exists and is accessible via the flow registry,
     - a dynamic change in the topology (=bind=) doesn’t break the path.
+
 
 *** ✔ UUID
 
@@ -344,10 +344,11 @@
 * Misc                                                             :noexport:
   :PROPERTIES:
   :UNNUMBERED: notoc
+  :header-args: :eval no-export
   :END:
 
 
-   #+NAME: utils
+   #+NAME: org-utils
    #+begin_src clojure :tangle no
      (defn from-table "Parses an org-mode table to clojure"
        [rows]
@@ -358,17 +359,19 @@
              cell))))
    #+end_src
 
-   #+RESULTS: utils
+   #+RESULTS: org-utils
    : #'hyperfiddle.dynamic/from-table
 
 
 * Scratch Zone                                                     :noexport:
   :PROPERTIES:
   :UNNUMBERED: notoc
+  :header-args: :tangle no :eval no-export
+
   :END:
 
 ** Binding steps
-   #+begin_src dot :file /tmp/bind_before.png :tangle no
+   #+begin_src dot :file /tmp/bind_before.png
    digraph g {
        control -> cross [dir=back, label=" ups"]
        cross -> z [dir=back, label=" ups"]
@@ -379,7 +382,7 @@
    #+RESULTS:
    [[file:/tmp/bind_before.png]]
 
-   #+begin_src dot :file /tmp/bind_z_listened.png :tangle no
+   #+begin_src dot :file /tmp/bind_z_listened.png
    digraph g {
        control:sw -> cross:nw [dir=back label=ups]
        cross:sw -> z:nw [dir=back label=ups]
@@ -394,7 +397,7 @@
 
 
 
-   #+begin_src dot :file /tmp/bind_after_cross.png :tangle no :exports none
+   #+begin_src dot :file /tmp/bind_after_cross.png
    <<bind_dot>>
    #+end_src
 
