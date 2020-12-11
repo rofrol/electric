@@ -172,25 +172,25 @@
     #+end_src
 
     #+NAME: bind_dot
-    #+begin_src dot :file bind.png :tangle no
+    #+begin_src dot :file .gen/bind.png :tangle no
     digraph bind {
-        control [label="control\n:p"]
-        control -> cross [dir=back]
-        control -> cross [dir=back, color="red"]
-        cross -> z:ne [style=dotted, color="lightgray", label=ref]
-        {rank=same; cross -> p [style=dotted, color="lightgray", minlen=2, label=ref]; q}
-        z:e -> p [color="lightgreen", dir=both, label=water]
-        unknown_source [style=invisible]
-        unknown_source -> p [dir=back, color="red"]
-        unknown_source -> p [dir=back]
-        z -> cross
-        z -> cross [color="red"]
-        cross -> control [color="lightgreen", dir=both, label=water]
+    control [label="control\n:p"]
+    control -> cross [dir=back]
+    control -> cross [dir=back, color="red"]
+    cross -> z:ne [style=dotted, color="lightgray", label=ref]
+    {rank=same; cross -> p [style=dotted, color="lightgray", minlen=2, label=ref]; q}
+    z:e -> p [color="lightgreen", dir=both, label=water]
+    unknown_source [style=invisible]
+    unknown_source -> p [dir=back, color="red"]
+    unknown_source -> p [dir=back]
+    z -> cross
+    z -> cross [color="red"]
+    cross -> control [color="lightgreen", dir=both, label=water]
     }
     #+end_src
 
     #+RESULTS: bind_dot
-    [[file:bind.png]]
+    [[file:.gen/bind.png]]
 
 
     Where:
