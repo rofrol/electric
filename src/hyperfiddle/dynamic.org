@@ -502,6 +502,104 @@
    - …
 
 
+** A trace can be replayed against the code that produced it
+
+   User land functions produces a flow for which we can trace node values using
+   an injected tracing executor. From the trace we can reproduce the same graph
+   user code did generate.
+
+   #+begin_src haskell
+   userCode :: Inputs -> Flow
+   runUserCode :: Inputs -> userCode -> Flow
+   traceUserCode :: Inputs -> userCode -> (Flow, Trace)
+   rebuildGraph :: Trace -> Graph
+   rerunUserCode :: Trace -> userCode -> Graph
+   #+end_src
+
+   We can quickly see that =rerunUserCode= is anemic because it produces the
+   same graph we already have from the trace.
+
+   #+begin_src haskell
+   rerunUserCode trace userCode =
+     userCode . getInputs . rebuildGraph trace
+
+   snd . traceUserCode (getInputs trace) userCode = trace
+   #+end_src
+
+   If we trace user-code re-execution against a trace, we get the same trace.
+
+   Replaying a trace against user code is only useful if the code have side
+   effects. For instance, we want to build a UI from it. For each user-code
+   invocation point, we need a visitor to capture the produced value. Attaching
+   source-code metadata to the flow itself is not sufficient map back to a
+   unique point where a result was produced.
+
+
+** The flow is traversable
+
+   When replaying user functions, we don’t have actual implementations, we only
+   got the execution order and want to resolve values from the trace instead. We
+   follow these steps:
+
+   1. Rebuild graph from trace
+   2. Start user code execution with overloaded =apply=
+   3. for each dataflow application (=fmap=, =bind=, …), consume /next graph node/.
+
+   Getting the /next graph node/ is not a trivial list iteration. The graph is
+   already wired, therefore:
+
+   - we skip =pure= or input nodes, except the root;
+   - next of =bind= is always =z=;
+   - if a node got one child, this child is the next;
+   - if a node got more than one child we traverse depth-first, because Clojure
+     evaluate depth-first;
+
+   #+begin_src dot :file .gen/bind.png :tangle no
+   digraph bind {
+   control [label="control\n:p"]
+   control -> cross [dir=back]
+   cross -> z [style=dotted, color="lightgray", label=ref]
+   {rank=same; cross -> p [style=dotted, color="lightgray", minlen=2, label=ref]; q}
+   z -> p [color="lightgreen", dir=both]
+   unknown_source [style=invisible]
+   unknown_source -> p [dir=back]
+   z -> cross
+   cross -> control [color="lightgreen", dir=both]
+   control -> cross [color="purple", label="T1"]
+   cross -> z [color="purple", label="T2"]
+   fmap [label="fmap vector"]
+   z -> fmap [dir=back]
+   input -> fmap [dir=back]
+   z -> fmap [color="purple", label="T3"]
+   out1 [style=invisible]
+   out2 [style=invisible]
+   out3 [style=invisible]
+   fmap:sw -> out1 [dir=back]
+   fmap:sw -> out1 [color="purple", label="T4"]
+   fmap:s -> out2 [dir=back]
+   fmap:s -> out2 [color="purple", label="T5"]
+   fmap:se -> out3 [dir=back]
+   fmap:se -> out3 [color="purple", label="T6"]
+
+   }
+   #+end_src
+
+   #+RESULTS:
+   [[file:.gen/bind.png]]
+
+
+   We need a =graphIterator= such that:
+
+   #+begin_src haskell
+   iterateDepthFirst :: (a -> [a]) -> a -> [a]
+
+   step :: Node -> [Node]
+   flowIterator :: Node -> [Node]
+   flowIterator root = iterateDepthFirst step root
+
+   iterateDepthFirst (Branch node) = flatmap iterateDepthFirst (step node)
+   iterateDepthFirst (Leaf node)   = node
+   #+end_src
 
 * Misc                                                             :noexport:
   :PROPERTIES:
@@ -524,6 +622,60 @@
    #+RESULTS: org-utils
    : #'hyperfiddle.dynamic/from-table
 
+
+** Nodes can be lazy-sampled
+
+   A node can be active (eager) or passive (lazy). Being active or passive is
+   modeled by some flags:
+   - ready ⊢ boolean :: This node contains a value (not Nothing) and might
+     propagate it forward if someone is listening or samples. If the node is not
+     ready, there’s nothing to do and sampling it will produce Nothing.
+   - active ⊢ boolean :: someone listens (subscribed) to this node, it will push
+     forwards eagerly. This is already implemented.
+   - version ⊢ unsigned int :: an ever increasing and wrapping counter,
+     incremented every time a new value is put on the node.
+
+   Putting a value on a node sets the node inner state and increments it’s
+   =version=. If the node is active, it will push forwards eagerly, incrementing
+   descendants version accordingly. Lazy sampling a node (deref) walks the DAG
+   backwards until:
+   - a node is found in a non-ready state, the sample will produce the last
+     value seen.
+   - a node is found having a higher version then it’s children, causing a
+     forward propagation even if no one is listening.
+   - no node is blocked (non-ready) and all the ancestry has the same version,
+     the sample will produce the last value seen.
+
+   Walking the DAG backwards on each sample might be considered a costly
+   operation we might want to optimize.
+
+   NOTE:
+   - in JS, =x % Number.MAX_SAFE_INTERGER= wraps integers as uint.
+   - =(mod (+ 1 Integer/MAX_VALUE) Integer/MAX_VALUE)= does it in clojure
+   - Haxe emulates the uint type for java and js, but do not alters the platform
+     overflow behavior. Haxe.Int32 does guaranty consistent overflow behavior,
+     but implies implicit conversions and boxing.
+
+   #+begin_src dot :file lazy.png
+   digraph lazy{
+     control [label="control\nv:"]
+     cross [label="cross\nv:"]
+     p [label="p\nv:"]
+     z [label="z\nv:"]
+     input [label="input\nv:"]
+     join [label="join\nv:"]
+     out [style=invisible]
+     control -> cross [dir=back]
+     cross -> z [dir=back]
+     p -> z [color=green, dir=back]
+     z -> join [dir=back]
+     input -> join [dir=back]
+     join -> out [dir=back, label="deref"]
+   }
+   #+end_src
+
+   #+RESULTS:
+   [[file:lazy.png]]
 
 * Scratch Zone                                                     :noexport:
   :PROPERTIES:
