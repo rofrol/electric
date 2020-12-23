@@ -1,0 +1,205 @@
+#+PROPERTY: header-args :noweb yes :exports both
+#+PROPERTY: header-args:clojure :tangle test_cases.cljc :comments both
+#+PROPERTY: header-args:dot :exports result
+#+EXCLUDE_TAGS: noexport
+#+OPTIONS: toc:nil
+
+
+#+begin_src clojure
+(ns tracing
+  (:require [minitest :refer [tests]]))
+#+end_src
+
+* Tracing test cases
+
+  Given a flow and considering node ids are integers
+
+  #+begin_src clojure
+  (def flow (new-flow)
+  (def >a  (input flow))
+  (def >b  (fmap flow inc >a))
+  (def out (cap flow >b))
+  #+end_src
+
+** we can trace a flow
+
+   #+begin_src clojure
+   (def trace (trace! flow (put! >a 1)))
+
+   (tests
+    @out   := 2
+    @trace := [[:resume 0 1] ;; >a
+               [:resume 1 2] ;; >b
+               [:resume 2 2] ;; anonymous out node in cap
+               ])
+   #+end_src
+
+
+** trace contains the bind node topology
+
+   #+begin_src clojure
+   (def flow (new-flow))
+   (def >a (input flow))
+   (def >b (bind flow >a pure))
+   (def out (cap flow >b))
+
+   (def trace (trace! flow (put! >a :a)))
+
+   (tests
+    @out   := :a
+    @trace := [[:resume 0 :a]
+               [:resume 1 #noderef 2]
+               [:resume 2 :a]
+               [:resume 3 :a]])
+   #+end_src
+
+   #+begin_src clojure
+   (def flow (new-flow))
+   (def >control (input flow))
+   (def >p (input flow))
+   (def >q (input flow))
+   (def >cross (bind flow >a (fn [c]
+                               (case c
+                                 :p >p
+                                 :q >q))))
+   (def z (cap flow >cross))
+
+   (def trace (trace! flow
+                      (put! >a :p)
+                      (put! >p "value-in-p")
+                      (put! >a :q)
+                      (put! >p "value-in-p-2")
+                      (put! >q "value-in-q")))
+
+   (tests
+    @z     := "value-in-p"
+    @trace := [[:resume 0 :p]
+               [:resume 1 #noderef 2]
+               [:attach 3 2]
+               [:resume 2 "value-in-p"]
+               [:resume 3 "value-in-p"]
+               [:resume 0 :q]
+               [:resume 1 #noderef 4]
+               [:attach 3 4]
+               [:resume 2 "value-in-p-2"]
+               [:resume 4 "value-in-q"]
+               [:resume 3 "value-in-q"]])
+   #+end_src
+
+** we can replay a trace against a flow
+
+   #+begin_src clojure
+   (def flow (new-flow))
+   (def >a (input flow))
+   (def >b (fmap flow #?(:clj inc, :cljs nil) >a))
+   (def out (cap flow >b))
+
+   (def trace (trace! flow (put! >a 1)))
+
+   (tests
+     (play! flow trace)
+     @out := 2)
+   #+end_src
+
+** A trace is a stream
+
+   Because a trace is a stream, we never when it’s going to end. Therefore,
+   `play!` hooks the flow to the stream and stops when the stream stops.
+
+   Derefing a trace produces a seq of frames seen in the stream, implying the
+   trace is also a fifo queue.
+
+   For memory consumption reasons, we should be able to =consume!= a trace,
+   which would not retain frame elements. It implies such trace can only be
+   played once.
+
+
+
+* Transcript
+
+  #+begin_src dot :file trace.png
+  digraph trace{
+    {rank=same; input; control}
+    input -> z [dir=back]
+    control -> cross [dir=back]
+    cross -> z [dir=back]
+    {rank=same; p ; q}
+    p -> z [dir=both]
+    q
+
+  }
+  #+end_src
+
+  #+RESULTS:
+  [[file:trace.png]]
+
+  #+begin_src clojure
+
+  (do (def flow (new-flow))
+      (def >input (input flow))
+      (def >control (input flow))
+      (declare >p >q)
+      (def >cross (bind flow >control #?(:clj (fn [c] (case c :p >p :q >q)))))
+      (def >z (fmap flow #?(:clj vector) >input >cross))
+      (def >p (input))
+      (def >q (input))
+
+      (cap >z))
+
+  #?(:clj (trace! flow
+            (put! >control 1)
+            (put! >p :a)
+            (put! >input :b))
+     :cljs (play! flow trace))
+
+  [:exists 0]
+  [:exists 1]
+  [:attach 2 1]
+  [:resume 1 'p]
+  [:resume 2 #ref 4]
+  [:resume 4 :a]
+  [:resume 0 :b]
+  [:resume 3 [:b :a]]
+
+  0 => #uuid 0000
+  1 => #uuid 0001
+  2 => #uuid 0002 -> 1
+  3 => #uuid 0003 -> 0, 2
+  return
+  play! 1 'p
+  4 => #uuid 0004
+  2 => #ref 4
+  return
+  play! 4 :a
+  play! 0 :b
+  play! 3 [:b, :a]
+
+  {0 [[],     [:b]]
+   1 [[],     ['p]]
+   2 [[1],    [4]]
+   3 [[0, 2], [[:b, :a]]]
+   4 [[3],    [:a]]}
+
+  #+end_src
+
+  #+begin_src dot :file trace_reconstructed.png
+  digraph trace2{
+    {rank=same; 0; 1}
+    0 -> 3 [dir=back]
+    1 -> 2 [dir=back]
+    2 -> 3 [dir=back]
+    4 -> 3 [dir=both]
+  }
+  #+end_src
+
+  #+RESULTS:
+  [[file:trace_reconstructed.png]]
+
+* Ideas
+
+  Nodes are named, the registry is a map {name Queue<values>}
+  where Queue<values> is FIFO.
+
+
+  the flow hydrates (via redefined hf-apply) by iterating over a reconstructed
+  flow from the trace.
