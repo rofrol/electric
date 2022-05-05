@@ -80,9 +80,9 @@
          (dom/class "browser")
          (dom/div
           (dom/class "view")
-          (new user.browser/View)
+          #_(new user.browser/View)
           #_~user.hytradboi/view
-          #_(new user.orders-ui/Orders)))))))
+          (new user.orders-ui/Orders)))))))
 
 (def ^:export reactor)
 
