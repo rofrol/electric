@@ -65,6 +65,8 @@
 (defn set-properties! [e m] #?(:cljs (let [styles (:style m)
                                            props  (dissoc m :style)]
                                        (when (seq styles) (goog.style/setStyle e (clj->js styles)))
+                                       (when-let [l (or (:list props) (get props "list"))]
+                                         (.setAttribute e "list" l))
                                        (when (seq props) (d/setProperties e (clj->js (clean-props props)))))))
 
 (defmacro props [m] `(set-properties! node ~m))

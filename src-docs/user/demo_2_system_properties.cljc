@@ -19,11 +19,11 @@
     (dom/h1 (dom/text "System Properties"))
     (let [filter (Input.)]
       (dom/div (dom/text (str "Input: " filter)))
-      (dom/table
-        ~@(p/for [[k v] (sort-by key (system-properties filter))]
-            ~@(dom/tr
-                (dom/td (dom/text (str k)))
-                (dom/td (dom/text (str v)))))))))
+      (dom/table {:style {:width "100%", :table-layout :fixed, :word-break :break-all}}
+        ~@(dom/for [[k v] (sort-by key (system-properties filter))]
+          ~@(dom/tr
+             (dom/td (dom/text (pr-str k)))
+             (dom/td (dom/text (pr-str v)))))))))
 
 (def main #?(:cljs (p/client (p/main
                                (try

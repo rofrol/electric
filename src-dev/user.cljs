@@ -1,22 +1,22 @@
 (ns ^:dev/once user
   (:require
-    goog.object
+   goog.object
     ; Due to :require-macros, demos are loaded in JVM as well on shadow build
-    user.demo-1-healthcheck
-    user.demo-2-system-properties
-    user.demo-3-webview
-    user.demo-4-counter
-    user.demo-5-button
-    user.demo-6-todos-basic
-    wip.demo-two-clocks
-    wip.orders-ui
-    #_wip.demo-hfql ; require running `yarn` for codemirror dependency
-    wip.demo-todos-stage
-    wip.demo-logical-clock
-    wip.example-router
-    wip.hfql-links
-    wip.editor
-    ))
+   user.demo-1-healthcheck
+   user.demo-2-system-properties
+   user.demo-3-webview
+   user.demo-4-counter
+   user.demo-5-button
+   user.demo-6-todos-basic
+   user.demo-composition
+   wip.demo-two-clocks
+   wip.orders-ui
+   #_wip.demo-hfql ; require running `yarn` for codemirror dependency
+   wip.demo-todos-stage
+   wip.demo-logical-clock
+   wip.example-router
+   wip.hfql-links
+   wip.editor))
 
 (defn runtime-resolve [exported-qualified-sym]
   (assert (qualified-symbol? exported-qualified-sym))
@@ -25,7 +25,7 @@
         path-segments (clojure.string/split path-s ".")]
     (goog.object/getValueByKeys js/window (clj->js path-segments))))
 
-(defonce user-photon-main `user.demo-1-healthcheck/main)    ; lazy resolve
+(defonce user-photon-main `user.demo-composition/main)    ; lazy resolve
 (defonce reactor nil)                                       ; save for debugging
 
 (defn set-main [s]

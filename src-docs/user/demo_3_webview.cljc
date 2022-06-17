@@ -36,20 +36,26 @@
              (dom/events "input" (map (dom/oget :target :value)) "")))
 
 (p/defn View []
-  (let [email (Input.)]
-    (dom/table
+  (dom/div
+   (let [email (Input.)]
+     (dom/table
       (p/for [id ~@(orders db email)]
         (dom/tr
-          (dom/td (dom/text id))
-          (dom/td (dom/text ~@(:order/email (d/entity db id))))
-          (dom/td (dom/text ~@(:order/gender (d/entity db id)))))))))
+         (dom/td (dom/text id))
+         (dom/td (dom/text ~@(:order/email (d/entity db id))))
+         (dom/td (dom/text ~@(:order/gender (d/entity db id))))))))))
 
 (p/defn App []
-  (binding [dom/node (dom/by-id "root")]
-    ~@(binding [db (p/watch conn)]                          ; server
-        ~@(View.))))
+  ~@(binding [db (p/watch conn)]                          ; server
+      ~@(View.)))
 
-(def main #?(:cljs (p/client (p/main (try (App.) (catch Pending _))))))
+(def main #?(:cljs (p/client (p/main (try 
+                                       (binding [dom/node (dom/by-id "root")]
+                                         (App.))
+                                       (catch Pending _))))))
+
+(defn transact! [tx]
+  #?(:clj (d/transact conn tx)))
 
 (comment
   #?(:clj (user/browser-main! `main))

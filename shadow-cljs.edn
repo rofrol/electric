@@ -1,15 +1,17 @@
 {:deps     {:aliases [:dev]}
  :nrepl    {:port 9001}
- :dev-http {8080 {:root "resources/public"}}
+ :dev-http {8080 {:root "resources/public"}} 
  :builds   {:devkit   {:target        :browser
                        :devtools      {:watch-dir       "resources/public"    ; live reload CSS
                                        :hud             #{:errors :progress}
-                                       :ignore-warnings true}                 ; warnings don't prevent hot-reload
+                                       :ignore-warnings true                  ; warnings don't prevent hot-reload
+                                       :use-document-protocol true
+                                       :devtools-url "https://9630-hyperfiddle-photon-vszjlfl2vfb.ws-eu47.gitpod.io"}
                        :output-dir    "resources/public/js"
                        :asset-path    "/js"
                        :modules       {:main {:entries [user]}}}
             :editor   {:target        :browser
-                       :devtools      {:watch-dir       "resources/public"    ; live reload CSS
+                       :devtools      {:watch-dir       "resources/public"    ; live reload CSS 
                                        :hud             #{:errors :progress}
                                        :ignore-warnings true}                 ; warnings don't prevent hot-reload
                        :output-dir    "resources/public/js/editor"
