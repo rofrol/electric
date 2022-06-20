@@ -55,7 +55,10 @@
                                        (catch Pending _))))))
 
 (defn transact! [tx]
-  #?(:clj (d/transact conn tx)))
+  #?(:clj (try (d/transact! conn tx)
+               nil
+               (catch Throwable t
+                 (prn "Transact ERROR" t)))))
 
 (comment
   #?(:clj (user/browser-main! `main))

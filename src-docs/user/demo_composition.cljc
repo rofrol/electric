@@ -9,6 +9,13 @@
   (:import (hyperfiddle.photon Pending))
   #?(:cljs (:require-macros user.demo-composition)))      ; forces shadow hot reload to also reload JVM at the same time
 
+(defn read-edn [str]
+  #?(:cljs (try (prn "reading" str)
+                (edn/read-string str)
+                (catch :default t
+                  (prn "Invalid EDN" str)
+                  nil))))
+
 (p/defn App []
   (dom/div
    (dom/h1 (dom/text "Pick a demo:"))
@@ -16,7 +23,7 @@
                               (dom/option {:value "1"} (dom/text "1 - Button"))
                               (dom/option {:value "2"} (dom/text "2 - System Properties"))
                               (dom/option {:value "3"} (dom/text "3 - Webview"))
-                              (dom/events "change" (map (dom/oget "target" "value")) "3"))]
+                              (dom/events "change" (map (dom/oget "target" "value")) "1"))]
      (case selected
        "1" (button/App.)
        "2" (sys-props/App.)
@@ -40,13 +47,14 @@
             (dom/div {:style {:display :grid
                               :grid-template-columns "1fr auto"
                               :grid-gap "0.5rem"}}
-                     (let [initial-tx "[{:order/email \"dan@example.com\"}]"
-                           tx (dom/input {:value initial-tx}
-                                         (dom/events "input" (map (dom/oget "target" "value")) initial-tx))]
+                     (let [initial-tx [{:order/email "dan@example.com"}]
+                           tx (dom/input {:value (pr-str initial-tx)}
+                                         (dom/events "input" (comp (map (dom/oget "target" "value"))
+                                                                   (map read-edn)) initial-tx))]
                        tx ; hack
                        (when (dom/button (dom/text "Transact")
-                                         (z/impulse ~@(p/watch webview/conn) (dom/>events "click")))
-                         ~@(do (webview/transact! (edn/read-string tx))
+                                         (z/impulse z/time (dom/>events "click")))
+                         ~@(do (webview/transact! tx)
                                nil))))))))) 
 
 (def main #?(:cljs (p/client (p/main
