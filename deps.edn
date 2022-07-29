@@ -45,6 +45,7 @@
            :dev     {:extra-paths ["src-dev" "src-docs" "test" "scratch"] ; for clj command
                      :extra-deps  {com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.0.0-alpha1"}
                                    binaryage/devtools                       {:mvn/version "1.0.6"}
+                                   reagent/reagent                          {:mvn/version "1.1.1"}
                                    thheller/shadow-cljs                     {:mvn/version "2.18.0"}
                                    ch.qos.logback/logback-classic {:mvn/version "1.2.11"}}
                      :jvm-opts    ["-Dclojure.tools.logging.factory=clojure.tools.logging.impl/slf4j-factory"

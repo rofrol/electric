@@ -27,6 +27,7 @@
     ;; wip.demo-hfql
     ;; wip.editor
     hyperfiddle.photon-dom-test
+    wip.reagent-interop
     )
   (:require-macros [user :refer [get-default-demo]]))
 
