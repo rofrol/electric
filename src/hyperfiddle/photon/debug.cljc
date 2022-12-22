@@ -5,7 +5,8 @@
             [hyperfiddle.photon-impl.ir :as-alias ir])
   (:import (hyperfiddle.photon Failure Pending)
            (missionary Cancelled)
-           #?(:clj (clojure.lang ExceptionInfo))))
+           #?(:clj (clojure.lang ExceptionInfo))
+           #?(:clj (hyperfiddle.photon FailureInfo))))
 
 (defonce ^{:doc "A random unique ID generated for each photon runtime instance (browser tab, jvm). Used to identify origin of a transfered value."}
   PEER-ID
@@ -13,15 +14,22 @@
   #?(:clj  (java.util.UUID/randomUUID)
      :cljs (random-uuid)))
 
+(defn ex-info*
+  ([message data]
+   (ex-info* message data nil))
+  ([message data cause]
+   #?(:clj (#_ex-info FailureInfo. message data cause)
+      :cljs (ex-info message data cause))))
+
 (defn add-stack-frame [frame ex] ; TODO use Throwable.setStackTrace if possible instead of allocating a new ExInfo for each frame
-  (ex-info (ex-message ex)
+  (ex-info* (ex-message ex)
     (-> (update (ex-data ex) ::trace (fnil conj []) (assoc frame ::origin PEER-ID))
       (assoc :hyperfiddle.photon/type ::trace))
     (or (ex-cause ex) ex)))
 
 (defn error ; TODO Don’t use ExceptionInfo. It is slow because it computes the stacktrace on instantiation. We don’t need it.
   ([^ExceptionInfo ex]
-   (Failure. (ex-info (ex-message ex) (assoc (ex-data ex) :hyperfiddle.photon/type ::trace) (ex-cause ex))))
+   (Failure. (ex-info* (ex-message ex) (assoc (ex-data ex) :hyperfiddle.photon/type ::trace) (ex-cause ex))))
   ([debug-info ^Failure failure]
    (let [err (.-error failure)]
      (if (or (instance? Pending err)
@@ -53,7 +61,7 @@
 (defn serializable [map]
   (if (contains? map ::trace)
     (update map ::trace (partial mapv serializable-frame))
-    error))
+    map))
 
 (defn normalize-frame [frame]
   (let [meta        (::meta frame)
