@@ -5,7 +5,9 @@
             [hyperfiddle.photon-dom2 :as-alias dom]
             #?(:clj [clojure.java.io :as io])
 
-            [clojure.edn :as edn])
+            [clojure.edn :as edn]
+            [garden.core :as g]
+            [garden.compiler :as compiler])
   #?(:cljs (:require-macros [hyperfiddle.photon-css])))
 
 ;; For some CSSOM context (what react does is not interersting)
@@ -136,11 +138,17 @@
 
 (defn dynamic-class [] (str (munge (gensym))))
 
+(defn precompile [CSS]
+  (cond (string? CSS)                         CSS
+        (map? CSS)                            (str "{" (g/style CSS) "}")
+        (and (vector? CSS) (map (first CSS))) (g/css (into [:&] CSS))
+        :else                                 (g/css {:pretty-print? false} CSS)))
+
 (defn css* [static-class CSS]
   (let [dynamic-sym (gensym "dynamic")]
     `(let [~dynamic-sym (dynamic-class)]
        (dom/element "style"
-         ~@(map (fn [rule] `(css-rule ~static-class ~dynamic-sym ~rule)) (rules-text CSS)))
+         ~@(map (fn [rule] `(css-rule ~static-class ~dynamic-sym ~rule)) (rules-text (precompile CSS))))
        [~static-class ~dynamic-sym])))
 
 (defmacro css
@@ -165,3 +173,31 @@
 (defn class
   ([] (str (gensym "class_")))
   ([prefix] (str (munge (gensym prefix)))))
+
+;; (->>
+;;   (g/css {:pretty-print? false}  [:a {:color "blue"}])
+;;   (css-rule* nil nil))
+
+;; (css [:a {:color "blue"}]) 
+
+;; (g/style {:display :grid, :foo :bar})
+
+;; (precompile [{:a :b}
+;;              [:.tile {:c :d}]])
+
+(extend-protocol garden.compiler/CSSRenderer
+  #?(:clj clojure.lang.Symbol :cljs Symbol)
+  (render-css [this] (str "$" this))
+
+  ;; #?(:clj clojure.lang.ISeq
+  ;;    :cljs RSeq)
+  ;; (render-css [this] (if true #_(= 'quote (first this))
+  ;;                          (str "$" this)
+  ;;                          (map garden.compiler/render-css this)))
+  )
+
+;; (g/style '{:foo bar})
+;; (g/style '{:foo '(str bar)})
+
+;; (seq? '(foo bar))
+;; (type (first '[(str bar)]))
