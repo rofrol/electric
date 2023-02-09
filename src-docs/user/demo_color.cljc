@@ -35,12 +35,15 @@
 (defn saturation->chroma [saturation] (* 0.158 (/ saturation 100)))
 
 (p/defn Tile [color]
-  (let [rgb                          (format-rgb color)
-        [static-class dynamic-class] (dom/css "{ background-color: $(rgb);}")]
+  (let [[static-class dynamic-class] (dom/css "
+{
+  display: flex;
+  align-items: center;
+  background-color: $(format-rgb color);
+}
+")]
     (dom/div (dom/props {:class [static-class dynamic-class "tile"]
-                         :style {:display         :flex
-                                 :align-items     :center
-                                 :justify-content :center
+                         :style {:justify-content :center
                                  :color           :white
                                  :width           "100px"
                                  :height          "100%"
@@ -56,7 +59,7 @@
           swap-route! router/swap-route!]
       (dom/styled dom/div
         "{ display: grid; max-width: 600px }
-         .tile { border: 5px gray solid; }"
+         .tile { border: 0px gray solid; }"
         (dom/props {#_#_:class ["cls2"] ; FIXME would overwrite the class from `css/styled`
                     :style {:grid-template-columns "auto 1fr auto"
                             :gap                   "0 1rem"

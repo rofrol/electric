@@ -4,7 +4,8 @@
             [hyperfiddle.rcf :as rcf :refer [tests]]
             [hyperfiddle.photon-dom2 :as-alias dom]
             #?(:clj [clojure.java.io :as io])
-            )
+
+            [clojure.edn :as edn])
   #?(:cljs (:require-macros [hyperfiddle.photon-css])))
 
 ;; For some CSSOM context (what react does is not interersting)
@@ -28,27 +29,45 @@
 (tests
   (def CSS
     "* > label {color:red;;  } 
-   pre:hover{color:$(color);} p {color : green ;}
+   pre:hover{color:$color;} p {color : green ;}
 ")
-  (rules-text CSS) := ["* > label {color:red;}" "pre:hover{color:$(color);}" "p {color:green;}"])
+  (rules-text CSS) := ["* > label {color:red;}" "pre:hover{color:$color;}" "p {color:green;}"])
 
+;; JVM only, match $(sexpr) using forward references: http://stackoverflow.com/a/47162099
+;; (?=\()(?:(?=.*?\((?!.*?\1)(.*\)(?!.*\2).*))(?=.*?\)(?!.*?\2)(.*)).)+?.*?(?=\1)[^(]*(?=\2$)
+(def SEXPR-HOLE #?(:clj #"\$(?=\()(?:(?=.*?\((?!.*?\1)(.*\)(?!.*\2).*))(?=.*?\)(?!.*?\2)(.*)).)+?.*?(?=\1)[^(]*(?=\2$)"))
+(def VALUE-HOLE #"(\$[^\(\s]*)")
+
+(defn holes [str]
+  (->> (concat (map first (re-seq SEXPR-HOLE str))
+         (map first (re-seq VALUE-HOLE str)))
+    (remove #{"$"})
+    (sort-by #(.indexOf str %))))
+
+(tests
+  (holes "color:$red $black") := ["$red" "$black"]
+  (holes "color: $(identity \"red\") $(str (inc foo)) ") := ["$(identity \"red\")" "$(str (inc foo))"]
+  )
+
+;; TODO template should accept sexprs (need to regexp match balanced parens)
+;; Desired syntax : $value or $(sexpr arg0 arg1)
 (defn template [rhs]
-  (let [hole-name (fn [hole] (str/replace hole #"(^\$\(|\)$)" ""))
-        holes     (map first (re-seq #"(\$\([^\)]*\))" rhs))]
+  (let [hole-form (fn [hole] (clojure.edn/read-string (str/replace-first hole #"\$" "")))
+        holes     (holes rhs)]
     (if (empty? holes)
       rhs
       (let [left  (as-> holes $
-                   (reduce (fn [rhs hole] (str/replace-first rhs hole "_HF_CSS_CUT_")) rhs $)
-                   (str/split $ #"_HF_CSS_CUT_"))
-            right (map (comp symbol hole-name) holes)]
+                    (reduce (fn [rhs hole] (str/replace-first rhs hole "_HF_CSS_CUT_")) rhs $)
+                    (str/split $ #"_HF_CSS_CUT_"))
+            right (map hole-form holes)]
         (cons `str
           (if (empty? left)
             right
             (butlast (interleave left (concat right (repeat (count left) nil))))))))))
 
 (tests
-  (template "1fr $(var) 2fr $(var2) 3fr;")
-  := `(str "1fr " ~'var " 2fr " ~'var2 " 3fr;"))
+  (template "1fr $var 2fr $(var2) 3fr;")
+  := `(str "1fr " ~'var " 2fr " (~'var2) " 3fr;"))
 
 (defn parse-declaration [decl] (map str/trim (str/split decl #":")))
 
@@ -102,14 +121,14 @@
   ([rule-text] (css-rule* nil nil rule-text))
   ([static-class dynamic-class rule-text]
    (let [[selector declarations] (template-rule rule-text)
-         dynamic-decls           (filter dynamic? declarations)
+         ;; dynamic-decls           (filter dynamic? declarations)
          rule-sym                (gensym "rule_")]
-     (write-static-css! static-class selector declarations)
-     (when (seq dynamic-decls)
+     ;; (write-static-css! static-class selector declarations)
+     (when (seq declarations)
        `(let [~rule-sym (.-style (make-rule dom/node (make-selector ~static-class ~dynamic-class ~selector)))]
           ~@(map (fn [[key value]]
                    `(.setProperty ~rule-sym ~key ~value))
-              dynamic-decls))))))
+              declarations))))))
 
 (defmacro css-rule
   ([rule-text] (css-rule* rule-text))
