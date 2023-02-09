@@ -35,15 +35,17 @@
 (defn saturation->chroma [saturation] (* 0.158 (/ saturation 100)))
 
 (p/defn Tile [color]
-  (dom/div (dom/props {:style {:display          :flex
-                               :align-items      :center
-                               :justify-content  :center
-                               :color            :white
-                               :background-color (format-rgb color)
-                               :width            "100px"
-                               :height           "100%"
-                               }})
-    (dom/text "Contrast")))
+  (let [rgb                          (format-rgb color)
+        [static-class dynamic-class] (dom/css "{ background-color: $(rgb);}")]
+    (dom/div (dom/props {:class [static-class dynamic-class "tile"]
+                         :style {:display         :flex
+                                 :align-items     :center
+                                 :justify-content :center
+                                 :color           :white
+                                 :width           "100px"
+                                 :height          "100%"
+                                 }})
+      (dom/text "Contrast"))))
 
 (p/defn App []
   (p/client
@@ -52,12 +54,14 @@
           s (or s 80)
           l (or l 70)
           swap-route! router/swap-route!]
-      (dom/div (dom/props {:style {:display               :grid
-                                   :grid-template-columns "auto 1fr auto"
-                                   :gap                   "0 1rem"
-                                   :align-items           :center
-                                   :justify-items         :stretch
-                                   :max-width             "600px"}})
+      (dom/styled dom/div
+        "{ display: grid; max-width: 600px }
+         .tile { border: 5px gray solid; }"
+        (dom/props {#_#_:class ["cls2"] ; FIXME would overwrite the class from `css/styled`
+                    :style {:grid-template-columns "auto 1fr auto"
+                            :gap                   "0 1rem"
+                            :align-items           :center
+                            :justify-items         :stretch}})
         (dom/p (dom/text "Lightness"))
         (dom/input (dom/props {:type  :range
                                :min   0

@@ -4,6 +4,7 @@
             #?(:cljs goog.object)
             #?(:cljs goog.style)
             [hyperfiddle.photon :as p]
+            [hyperfiddle.photon-css :as css]
             [missionary.core :as m])
   (:import [hyperfiddle.photon Pending])
   #?(:cljs (:require-macros [hyperfiddle.photon-dom2 :refer [with]])))
@@ -298,3 +299,8 @@
 (defmacro var [& body] `(element :var ~@body))
 (defmacro video [& body] `(element :video ~@body))
 (defmacro wbr [& body] `(element :wbr ~@body))
+
+(defmacro styled [tag CSSText & body] `(css/styled ~tag ~CSSText ~@body))
+(defmacro css
+  ([CSS] (css/css* nil CSS))
+  ([static-class CSS] (css/css* static-class CSS)))
