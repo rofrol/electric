@@ -1879,3 +1879,12 @@
   % := 0
   (swap! !x inc)
   % := 1)
+
+(tests
+  (with (p/run (try (let [!x (atom true), x (p/watch !x)]
+                      (p/server (when (tap x) (tap [:value x])))
+                      (swap! !x not))
+                    (catch Pending _)))
+    % := true,
+    % := false,
+    % := [:value false])) ; impossible state, false is guarded by when
