@@ -41,7 +41,7 @@
 
             ; these demos require extra deps alias
             #_wip.dennis-exception-leak
-            #_wip.demo-stage-ui4
+            wip.demo-stage-ui4
             #_wip.datomic-browser
             ))
 
@@ -95,5 +95,6 @@
       (set! (.-title js/document) (str (clojure.string/capitalize (name (first history/route))) " - Hyperfiddle"))
       (binding [dom/node js/document.body]
         (dom/pre (dom/text (contrib.str/pprint-str history/route)))
-        (let [[page & args] history/route]
+        (e/server (wip.demo-stage-ui4/Form2.))
+        #_(let [[page & args] history/route]
           (e/server (new (Pages. page #_args))))))))
