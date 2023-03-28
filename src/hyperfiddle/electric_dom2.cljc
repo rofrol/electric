@@ -212,8 +212,9 @@
 (defmacro bind-value
   ([v]        `(bind-value ~v set-val))
   ([v setter] `(let [v# ~v]
-                 (when-not (new Focused?)
-                   (~setter node v#)))))
+                 (when-some [vv# (when-not (new Focused?) v#)]
+                   (case (new e/Unglitch vv#)
+                     (~setter node vv#))))))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))
