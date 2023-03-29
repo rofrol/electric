@@ -23,11 +23,18 @@
       (dom/dl
         (dom/dt (dom/text "input-glitch"))
         (dom/dd (new (e/fn [label]
-                       (dom/input (Input.) (when-not (dom/Focused?.)
-                                             (case (e/Unglitch. label)
-                                               (set! (.-value dom/node) label)))))
+                       (dom/input (Input.)
+                         #_(dom/bind-value label)
+                         (when-not (dom/Focused?.)
+                           (set! (.-value dom/node) label))
+                         #_(when-not (dom/Focused?.)
+                           (case (e/Unglitch. label)
+                             (set! (.-value dom/node) label)))))
                   label))
         (dom/dt (dom/text "focus-glitch"))
         (dom/dd (dom/input (Input.)
-                  (when-some [l (when-not (dom/Focused?.) label)]
-                    (set! (.-value dom/node) l))))))))
+                  (dom/bind-value label)
+                  #_(when-some [l (when-not (dom/Focused?.) label)]
+                    (set! (.-value dom/node) l))
+                  #_(let [label label] (when-not (dom/Focused?.) (set! (.-value dom/node) label)))
+                  #_(when-not (dom/Focused?.) (set! (.-value dom/node) label))))))))

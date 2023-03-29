@@ -180,6 +180,16 @@
                 :impulse (assoc state :status :pending) ; impulse is seen for 1 frame and then cleared
                 :pending (if busy state {:status :idle}))))))
 
+(e/defn EventImpulse [event busy]
+  (:event
+    (let [!state (atom {:status :idle}), state (e/watch !state)]
+      (when (some? event) (swap! !state happen event))
+      (reset! !state
+              (case (:status state)
+                :idle state
+                :impulse (assoc state :status :pending) ; impulse is seen for 1 frame and then cleared
+                :pending (if busy state {:status :idle}))))))
+
 (defmacro ^:deprecated ^:no-doc event "Deprecated, please use `on!`" [& args] `(on! ~@args))
 (e/def ^:deprecated system-time-ms e/system-time-ms)
 (e/def ^:deprecated system-time-secs e/system-time-secs)
@@ -189,16 +199,14 @@
   (on \"click\" (e/fn [event] ...))"
   ;; TODO add support of event options (see `event*`)
   ([typ]   `(new Event ~typ false))
-  ([typ F] `(on node ~typ ~F))
-  ([node typ F] `(binding [node ~node]
-                   ;; checking types is not enough, one could return an exception without throwing
-                   (let [[state# v#] (e/with-cycle [x# [::init nil]]
-                                       (if-some [evt# (new Event ~typ (= (first x#) ::pending))]
-                                         (try [::ok (new ~F evt#)]
-                                              (catch Pending  e# [::pending e#])
-                                              (catch :default e# [::err e#]))
-                                         x#))]
-                     (case state# (::init ::ok) v#, (::err ::pending) (throw v#))))))
+  ([typ F] `(on Event ~typ ~F))
+  ([Imp arg F] `(let [[state# v#] (e/with-cycle [x# [::init nil]]
+                                    (if-some [evt# (new ~Imp ~arg (= (first x#) ::pending))]
+                                      (try [::ok (new ~F evt#)]
+                                           (catch Pending  e# [::pending e#])
+                                           (catch :default e# [::err e#]))
+                                      x#))]
+                  (case state# (::init ::ok) v#, (::err ::pending) (throw v#)))))
 
 
 (defmacro on-pending [pending-body & body] `(try (do ~@body) (catch Pending e# ~pending-body (throw e#))))
@@ -211,10 +219,16 @@
 
 (defmacro bind-value
   ([v]        `(bind-value ~v set-val))
-  ([v setter] `(let [v# ~v]
-                 (when-some [vv# (when-not (new Focused?) v#)]
-                   (case (new e/Unglitch vv#)
-                     (~setter node vv#))))))
+  ([v setter] `(bind-value ~v #(~setter node %) (new Focused?)))
+  ([v setter-fn focused?] `(let [v# ~v] ; <- let fixes focus glitch on "when true" bug
+                             (when-not ~focused?
+                               (case (new e/Unglitch v#) ; <- Unglitch usually & accidentally fixes input glitch
+                                 (~setter-fn v#))))))
+
+#_(defmacro bind-value
+  ([v]        `(bind-value ~v set-val))
+  ([v setter] `(bind-value ~v #(~setter node %) (new Focused?)))
+  ([v setter-fn focused?] `(when-not ~focused? (~setter-fn ~v))))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))
