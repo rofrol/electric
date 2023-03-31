@@ -188,6 +188,36 @@
 (e/def ^:deprecated system-time-ms e/system-time-ms)
 (e/def ^:deprecated system-time-secs e/system-time-secs)
 
+(defn- throw-overlapping []
+  (throw (ex-info "An overlapping event arrived.
+If overlapping events are not allowed your input needs to be disabled.
+If overlapping events are allowed you should use `on-cc` to run them concurrently." {})))
+
+(e/defn EventSequence [type busy]
+  (second
+    (let [!state (atom [:idle nil]), state (e/watch !state)]
+      ;; FIXME infer warning on `case status`, why?
+      (on! type (partial swap! !state (fn [[status _] e] (case status :idle [:impulse e] (throw-overlapping)))))
+      (reset! !state
+        (case (first state)
+          :idle state
+          :impulse [:pending (second state)]
+          :pending (if busy state [:idle nil]))))))
+
+(defmacro -on [node Strategy typ F]
+  `(binding [node ~node]
+     (let [[state# v#] (e/with-cycle [x# [::init nil]]
+                         (if-some [evt# (new ~Strategy ~typ (= (first x#) ::pending))]
+                           (try [::ok (new ~F evt#)]
+                                (catch Pending  e# [::pending e#])
+                                (catch :default e# [::err e#]))
+                           x#))]
+       (case state# (::init ::ok) v#, (::err ::pending) (throw v#)))))
+
+(defmacro on-bp
+  ([typ F] `(on-bp node ~typ ~F))
+  ([node typ F] `(-on ~node EventSequence ~typ ~F)))
+
 (defmacro on
   "Run the given electric function on event.
   (on \"click\" (e/fn [event] ...))"
