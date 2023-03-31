@@ -218,6 +218,19 @@ If overlapping events are allowed you should use `on-cc` to run them concurrentl
   ([typ F] `(on-bp node ~typ ~F))
   ([node typ F] `(-on ~node EventSequence ~typ ~F)))
 
+(defmacro on-cc [typ F]
+  `(let [!alive# (atom #{})]
+     (on! ~typ #(swap! !alive# conj %))
+     (e/for [event# (e/watch !alive#)]
+       (let [[state# v#] (try [::ok (new ~F event#)]
+                              (catch Pending  ex# [::pending ex#])
+                              (catch :default ex# [::err ex#]))]
+         (case state#
+           ::init    v#
+           ::ok      (do (swap! !alive# disj event#) v#)
+           ::pending (throw v#)
+           ::err     (do (swap! !alive# disj event#) (throw v#)))))))
+
 (defmacro on
   "Run the given electric function on event.
   (on \"click\" (e/fn [event] ...))"

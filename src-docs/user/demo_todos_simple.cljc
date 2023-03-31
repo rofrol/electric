@@ -2,10 +2,22 @@
   (:require #?(:clj [datascript.core :as d]) ; database on server
             [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
-            [hyperfiddle.electric-ui4 :as ui]))
+            [hyperfiddle.electric-ui4 :as ui]
+            [missionary.core :as m]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
 (e/def db) ; injected database ref; Electric defs are always dynamic
+
+#?(:clj (defn tx! [latency tx] (m/sp (m/? (m/sleep latency)) (d/transact! !conn tx))))
+(e/def Tx!)
+
+(e/defn Latency [min max init]
+  (dom/div (dom/style {:display "flex", :flex-direction "column"})
+    (let [lat (dom/input (dom/props {:type "range" :min min, :max max, :value init, :style {:width "200px"}})
+                (parse-long (dom/Value.)))]
+      (dom/div (dom/text "Latency: " lat "ms")
+        (dom/style {:order "-1"}))
+      lat)))
 
 (e/defn TodoItem [id]
   (e/server
@@ -17,28 +29,24 @@
             (case status :active false, :done true)
             (e/fn [v]
               (e/server
-                (e/discard
-                  (d/transact! !conn [{:db/id id
-                                       :task/status (if v :done :active)}]))))
+                (new Tx! [{:db/id id :task/status (if v :done :active)}])))
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
 
 (e/defn InputSubmit [F]
   ; Custom input control using lower dom interface for Enter handling
   (dom/input (dom/props {:placeholder "Buy milk"})
-    (dom/on "keydown" (e/fn [e]
-                        (when (= "Enter" (.-key e))
-                          (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
-                            (new F v)
-                            (set! (.-value dom/node) "")))))))
+    (dom/on-cc "keydown" (e/fn [e]
+                           (when (= "Enter" (.-key e))
+                             (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
+                               (new F v)
+                               (set! (.-value dom/node) "")))))))
 
 (e/defn TodoCreate []
   (e/client
     (InputSubmit. (e/fn [v]
                     (e/server
-                      (e/discard
-                        (d/transact! !conn [{:task/description v
-                                             :task/status :active}])))))))
+                      (new Tx! [{:task/description v :task/status :active}]))))))
 
 #?(:clj (defn todo-count [db]
           (count
@@ -56,12 +64,16 @@
       (e/client
         (dom/h1 (dom/text "minimal todo list"))
         (dom/p (dom/text "it's multiplayer, try two tabs"))
-        (dom/div (dom/props {:class "todo-list"})
-          (TodoCreate.)
-          (dom/div {:class "todo-items"}
-            (e/server
-              (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
-                (TodoItem. id))))
-          (dom/p (dom/props {:class "counter"})
-            (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
-            (dom/text " items left")))))))
+        (let [latency (Latency. 0 2000 200)]
+          (e/server
+            (binding [Tx! (e/fn [tx] (new (e/task->cp (tx! (doto (rand-int latency) (prn :latency)) tx))) nil)]
+              (e/client
+                (dom/div (dom/props {:class "todo-list"})
+                  (TodoCreate.)
+                  (dom/div {:class "todo-items"}
+                    (e/server
+                      (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
+                        (TodoItem. id))))
+                  (dom/p (dom/props {:class "counter"})
+                    (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
+                    (dom/text " items left")))))))))))
