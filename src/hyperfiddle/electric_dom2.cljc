@@ -147,8 +147,10 @@
                nil))))))
 
 #?(:cljs (defn- listen [node typ f opts] (.addEventListener node typ f opts) #(.removeEventListener node typ f)))
-#?(:cljs (defn event* [node typ f opts]
-           (m/relieve {} (m/observe (fn [!] (! nil) (listen node typ #(-> % f !) (clj->js opts)))))))
+#?(:cljs (defn event*
+           ([node typ f opts] (event* node typ nil f opts))
+           ([node typ init f opts]
+            (m/relieve {} (m/observe (fn [!] (! init) (listen node typ #(-> % f !) (clj->js opts))))))))
 
 (defmacro on!
   "Call the `callback` clojure function on event.
@@ -164,6 +166,8 @@
     :idle {:status :impulse :event e} ; rising edge
     :pending {:status :impulse :event e} ; supersede the outstanding event with a new event
     :impulse (assert false "two events in the same frame? that's weird and wrong")))
+
+(e/defn Value [] (new (event* node "input" (.-value node) #(-> % .-target .-value) {})))
 
 ; data EventState = Idle | Impulse event | Pending event
 (e/defn Event [type busy]
