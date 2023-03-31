@@ -6,6 +6,7 @@
             [missionary.core :as m]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
+(comment (alter-var-root #'!conn (fn [_] (d/create-conn {}))))
 (e/def db) ; injected database ref; Electric defs are always dynamic
 
 #?(:clj (defn tx! [latency tx] (m/sp (m/? (m/sleep latency)) (d/transact! !conn tx))))
@@ -33,20 +34,21 @@
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
 
+(defonce !order-id #?(:clj (atom 0) :cljs nil))
+
 (e/defn InputSubmit [F]
   ; Custom input control using lower dom interface for Enter handling
   (dom/input (dom/props {:placeholder "Buy milk"})
-    (dom/on-cc "keydown" (e/fn [e]
-                           (when (= "Enter" (.-key e))
-                             (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
-                               (new F v)
-                               (set! (.-value dom/node) "")))))))
+    (dom/on= "keydown" (fn [e] (when (= "Enter" (.-key e))
+                                 (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
+                                   [e v])))
+      (e/fn [[_ v]] (new F v) (set! (.-value dom/node) "")))))
 
 (e/defn TodoCreate []
-  (e/client
-    (InputSubmit. (e/fn [v]
-                    (e/server
-                      (new Tx! [{:task/description v :task/status :active}]))))))
+  (InputSubmit.
+    (e/fn [v]
+      (e/server
+        (new Tx! [{:task/description v, :task/status :active, :task/order (swap! !order-id inc)}])))))
 
 #?(:clj (defn todo-count [db]
           (count
@@ -54,9 +56,9 @@
                    :where [?e :task/status ?status]] db :active))))
 
 #?(:clj (defn todo-records [db]
-          (->> (d/q '[:find [(pull ?e [:db/id :task/description]) ...]
+          (->> (d/q '[:find [(pull ?e [:db/id :task/description :task/order]) ...]
                       :where [?e :task/status]] db)
-            (sort-by :task/description))))
+            (sort-by :task/order))))
 
 (e/defn TodoList []
   (e/server
@@ -69,11 +71,12 @@
             (binding [Tx! (e/fn [tx] (new (e/task->cp (tx! (doto (rand-int latency) (prn :latency)) tx))) nil)]
               (e/client
                 (dom/div (dom/props {:class "todo-list"})
-                  (TodoCreate.)
-                  (dom/div {:class "todo-items"}
-                    (e/server
-                      (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
-                        (TodoItem. id))))
+                  (let [[running _ _] (TodoCreate.)]
+                    (dom/div {:class "todo-items"}
+                      (e/server
+                        (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
+                          (TodoItem. id)))
+                      (e/for [[_ v] running] (dom/div (dom/text "⌛ " v)))))
                   (dom/p (dom/props {:class "counter"})
                     (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
                     (dom/text " items left")))))))))))

@@ -56,11 +56,11 @@
 
 ;;; Presentation
 
-(defmacro ->busy [& body] `(try (do ~@body) false (catch Pending _ true)))
+(def ->busy (comp boolean seq first))
 
 (e/defn Button [label callback disabled?]
   (dom/button (dom/text label)
-    (let [busy (->busy (dom/on-bp "click" (e/fn [_] (Tx!. callback))))]
+    (let [busy (->busy (dom/on= "click" (e/fn [_] (Tx!. callback))))]
       (dom/props {:disabled (or disabled? busy), :aria-busy busy}))))
 
 (e/defn Latency [min max init]

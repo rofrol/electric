@@ -231,6 +231,26 @@ If overlapping events are allowed you should use `on-cc` to run them concurrentl
            ::pending (throw v#)
            ::err     (do (swap! !alive# disj event#) (throw v#)))))))
 
+(defmacro *on= [flow F]
+  `(let [!running# (atom #{}),  running#   (e/watch !running#)
+         !succeeded# (atom {}), succeeded# (->> !succeeded# m/watch (m/relieve merge) new)
+         !failed# (atom {}),    failed#    (->> !failed# m/watch (m/relieve merge) new)
+         flow# ~flow, F# ~F]
+     (when (some? flow#) (swap! !running# conj flow#))
+     (e/for [v# running#]
+       (try (let [ret# (new F# v#)]
+              (case ret# (do (reset! !succeeded# {v# ret#})
+                             (swap! !running# disj v#))))
+            (catch Pending  e#)
+            (catch :default e#
+              (reset! !failed# {v# e#})
+              (swap! !running# disj v#))))
+     [running# succeeded# failed#]))
+
+(defmacro on=
+  ([event-type F] `(*on= (on! ~event-type identity) ~F))
+  ([event-type kf F] `(*on= (on! ~event-type ~kf) ~F)))
+
 (defmacro on
   "Run the given electric function on event.
   (on \"click\" (e/fn [event] ...))"
