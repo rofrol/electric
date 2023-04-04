@@ -1,8 +1,11 @@
 (ns user.demo-todos-advanced
+  (:import [hyperfiddle.electric Pending]
+           [missionary Cancelled])
   (:require #?(:clj [datascript.core :as d]) ; database on server
             [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
             [hyperfiddle.electric-ui4 :as ui]
+            [contrib.debug :as dbg]
             [missionary.core :as m]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
@@ -42,18 +45,7 @@
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
 
-(e/defn InputSubmit [F]
-  ; Custom input control using lower dom interface for Enter handling
-  (dom/input (dom/props {:placeholder "Buy milk"})
-    (dom/on= "keydown" (fn [e] (when (= "Enter" (.-key e))
-                                 (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
-                                   (set! (.-value dom/node) "")
-                                   [e v])))
-      (e/fn [[_ v]] (new F v)))))
-
 (defn ->task [desc] {:task/description desc, :task/status :active, :task/order (swap! !order-id inc)})
-
-(e/defn TodoCreate [] (InputSubmit. (e/fn [v] (e/server (new Tx! [(->task v)])))))
 
 #?(:clj (defn todo-count [db]
           (count
@@ -65,9 +57,19 @@
                       :where [?e :task/status]] db)
             (sort-by :task/order))))
 
-(e/defn ConsumeGood [!succeeded] (e/for [[k _] (e/watch !succeeded)] (swap! !succeeded dissoc k)))
-(e/defn ReportBad [!failed] (e/for [[k ex] (e/watch !failed)] (.error js/console ex) (swap! !failed dissoc k)))
-(e/defn RunDefault [on=] (let [[_ !succeeded !failed] on=] (ConsumeGood. !succeeded) (ReportBad. !failed)))
+#?(:cljs (defn submit? [e] (and (= "Enter" (.-key e)) (not= "" (-> e .-target .-value)) e)))
+#?(:cljs (defn read-value! [node] (let [v (.-value node)] (set! (.-value node) "") v)))
+
+(e/defn Failed [v]
+  (dom/div (dom/text "💀 " v)
+    (dom/button (dom/text "⟳")
+      (-> (dom/for-each dom/node "click"
+            (e/fn [_]
+              (try (e/server (new Tx! [(->task v)])) ::done
+                   (catch Pending _ (dom/props {:aria-busy true, :disabled true}) :keep)
+                   (catch Cancelled _ (prn :inner-cancelled))
+                   (catch :default e (.error js/console "retry" v e)))))
+        vals first #{::done} not))))
 
 (e/defn TodoList []
   (e/server
@@ -80,23 +82,19 @@
             (binding [Tx! (e/fn [tx] (new (e/task->cp (tx! (doto (rand-int latency) (prn :latency)) tx))) nil)]
               (e/client
                 (dom/div (dom/props {:class "todo-list"})
-                  (let [[running !succeeded !failed] (TodoCreate.)]
+                  (let [in (dom/input (dom/props {:placeholder "Buy milk"}) dom/node)]
                     (dom/div {:class "todo-items"}
                       (e/server
                         (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
                           (TodoItem. id)))
-                      (e/for [[_ v] running] (dom/div (dom/text "⌛ " v)))
-                      (ConsumeGood. !succeeded)
-                      (e/for [[[_ v :as k] ex] (e/watch !failed)]
-                        (.error js/console v ex)
-                        (dom/div
-                          (dom/text "⚔ " v)
-                          (dom/button (dom/text "⟳")
-                            (RunDefault. (dom/on= "click" (fn [e] [e v])
-                                           (e/fn [_]
-                                             (dom/props {:aria-busy true, :disabled true})
-                                             (case (e/server (new Tx! [(->task v)]))
-                                               (swap! !failed dissoc k))))))))))
+                      (dom/for-each in "keydown"
+                        (e/fn [e]
+                          (when (submit? e)
+                            (let [v (read-value! in)]
+                              (try (e/server (new Tx! [(->task v)]))
+                                   (catch Pending _ (dom/div (dom/text "⌛ " v)) :keep)
+                                   (catch Cancelled _ (prn :cancelled?))
+                                   (catch :default e (.error js/console v e) (Failed. v)))))))))
                   (dom/p (dom/props {:class "counter"})
                     (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
                     (dom/text " items left")))))))))))

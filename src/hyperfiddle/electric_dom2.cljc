@@ -155,6 +155,7 @@
 (defmacro on!
   "Call the `callback` clojure function on event.
    (on! \"click\" (fn [event] ...)) "
+  ([event-name] `(on! ~event-name identity))
   ([event-name callback] `(on! node ~event-name ~callback))
   ([dom-node event-name callback] `(on! ~dom-node ~event-name ~callback nil))
   ([dom-node event-name callback options] `(new (event* ~dom-node ~event-name ~callback ~options))))
@@ -266,6 +267,22 @@ If overlapping events are allowed you should use `on-cc` to run them concurrentl
                                          x#))]
                      (case state# (::init ::ok) v#, (::err ::pending) (throw v#))))))
 
+(defmacro for-some "
+  Runs an electric for loop over truthy values of `flow`.
+
+  When `body` returns `nil` it is unmounted." [[sym flow] & body]
+  `(let [!alive# (atom #{}), flow# ~flow]
+     (when flow# (swap! !alive# conj flow#))
+     (e/for [~sym (e/watch !alive#)]
+       (when (nil? (do ~@body)) (swap! !alive# disj ~sym)))))
+
+(defmacro for-each [node event-type Fn]
+  `(let [push# (object-array 1)]
+     (into {}
+       (e/for [e# (->> (m/observe (fn [!#] (aset push# 0 !#) (listen ~node ~event-type #(!# [:conj %]) {})))
+                    (m/reductions (fn [ac# [typ# v#]] (case typ# :disj (disj ac# v#) :conj (conj ac# v#))) #{})
+                    (m/relieve {}) new)]
+         (let [v# (new ~Fn e#)] (if v# [e# v#] (do ((aget push# 0) [:disj e#]) nil)))))))
 
 (defmacro on-pending [pending-body & body] `(try (do ~@body) (catch Pending e# ~pending-body (throw e#))))
 
