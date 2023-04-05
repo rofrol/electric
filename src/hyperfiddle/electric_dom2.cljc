@@ -276,7 +276,23 @@ If overlapping events are allowed you should use `on-cc` to run them concurrentl
      (e/for [~sym (e/watch !alive#)]
        (when (nil? (do ~@body)) (swap! !alive# disj ~sym)))))
 
-(defmacro for-each [node event-type Fn]
+(defmacro *for-each [subject Fn]
+  `(let [push# (object-array 1)]
+     (into {}
+       (e/for [e# (->> (m/observe (fn [!#] (aset push# 0 !#) (~subject #(!# [:conj %]))))
+                    (m/reductions (fn [ac# [typ# v#]] (case typ# :conj (conj ac# v#) :disj (disj ac# v#))) #{})
+                    (m/relieve {}) new)]
+         (let [v# (new ~Fn e#)] (if v# [e# v#] (do ((aget push# 0) [:disj e#]) nil)))))))
+
+(defmacro for-each "Mounts `Fn` for each incoming event, unmounts `Fn` when it returns a falsy value.
+
+  Multiple `Fn`s can be mounted and running concurrently.
+  Returns a map from running events to their return value.
+  Uncaught exceptions bubble up but don't unmount `Fn`."
+  ([event-type Fn] `(for-each node ~event-type ~Fn))
+  ([dom-node event-type Fn] `(*for-each (fn [!#] (listen ~dom-node ~event-type !# {})) ~Fn)))
+
+#_(defmacro for-each [node event-type Fn]
   `(let [push# (object-array 1)]
      (into {}
        (e/for [e# (->> (m/observe (fn [!#] (aset push# 0 !#) (listen ~node ~event-type #(!# [:conj %]) {})))
@@ -294,8 +310,7 @@ If overlapping events are allowed you should use `on-cc` to run them concurrentl
 
 (defmacro bind-value
   ([v]        `(bind-value ~v set-val))
-  ([v setter] `(when-some [v# (when-not (new Focused?) ~v)]
-                 (~setter node v#))))
+  ([v setter] `(let [v# ~v] (when-not (new Focused?) (~setter node v#)))))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))
