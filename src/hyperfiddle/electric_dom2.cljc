@@ -213,8 +213,26 @@
 
 (defmacro bind-value
   ([v]        `(bind-value ~v set-val))
-  ([v setter] `(when-some [v# (when-not (new Focused?) ~v)]
-                 (~setter node v#))))
+  ([v setter] `(let [v# ~v] (when-not (new Focused?) (~setter node v#)))))
+
+(defmacro *for-each [subject Fn]
+  `(let [push# (object-array 1)]
+     (into {}
+       (e/for [e# (->> (m/observe (fn [!#] (aset push# 0 !#) (~subject #(!# [:conj %]))))
+                    (m/reductions (fn [ac# [typ# v#]] (case typ# :conj (conj ac# v#) :disj (disj ac# v#))) #{})
+                    (m/relieve {}) new)]
+         (let [v# (new ~Fn e#)] (if v# [e# v#] (do ((aget push# 0) [:disj e#]) nil)))))))
+
+(defmacro for-each "Mounts `Fn` for each incoming event, unmounts `Fn` when it returns a falsy value.
+
+  Multiple `Fn`s can be mounted and running concurrently.
+  Returns a map from running events to their return value.
+  Uncaught exceptions bubble up but don't unmount `Fn`."
+  ([event-type Fn] `(for-each node ~event-type ~Fn))
+  ([dom-node event-type Fn] `(*for-each (fn [!#] (listen ~dom-node ~event-type !# {})) ~Fn)))
+
+(e/defn Value [] (new (event* node "input" (.-value node) #(-> % .-target .-value) {})))
+(e/defn Checked? [] (new (event* node "change" (.-checked node) #(-> % .-target .-checked) {})))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))
