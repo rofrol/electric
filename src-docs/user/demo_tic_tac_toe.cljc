@@ -1,16 +1,18 @@
 (ns user.demo-tic-tac-toe
+  (:import [hyperfiddle.electric Pending])
   (:require [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]
-            [hyperfiddle.electric-ui4 :as ui]))
+            [hyperfiddle.electric-dom2 :as dom]))
 
 (def !x #?(:clj (atom (vec (repeat 10 0))) :cljs nil))
 (e/def x (e/server (e/watch !x)))
 (defn update-board [board pos] (update board pos #(case % 0 1, 1 2, 2 0)))
 
 (e/defn Button [offset]
-  (ui/button (e/fn []
-               (e/server
-                 (swap! !x update-board offset)))
+  (dom/button
+    (dom/for-each "click" (e/fn [_] (try (e/server (swap! !x update-board offset))
+                                         (catch Pending _ :keep)
+                                         (catch missionary.Cancelled _)
+                                         (catch :default e (.error js/console e)))))
     (dom/text
       (case (e/server (nth x offset))
         2 "x"

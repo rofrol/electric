@@ -1,8 +1,7 @@
 (ns user.tutorial-7guis-1-counter
   (:require
     [hyperfiddle.electric :as e]
-    [hyperfiddle.electric-dom2 :as dom]
-    [hyperfiddle.electric-ui4 :as ui]))
+    [hyperfiddle.electric-dom2 :as dom]))
 
 ;; https://eugenkiss.github.io/7guis/tasks#counter
 
@@ -10,5 +9,5 @@
   (e/client
     (let [!state (atom 0)]
       (dom/p (dom/text (e/watch !state)))
-      (ui/button (e/fn [] (swap! !state inc))
-        (dom/text "Count")))))
+      (dom/button (dom/text "Count")
+        (dom/on! "click" (fn [_] (swap! !state inc)))))))

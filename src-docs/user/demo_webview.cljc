@@ -2,8 +2,7 @@
   "Electric fullstack query/view composition with client/server transfer"
   (:require #?(:clj [datascript.core :as d])
             [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]
-            [hyperfiddle.electric-ui4 :as ui]))
+            [hyperfiddle.electric-dom2 :as dom]))
 
 ; A database backed webview with reactive updates.
 ; The webview is subscribed to the database, which updates with each transaction.
@@ -28,9 +27,7 @@
   (e/client
     (dom/div
       (dom/h2 (dom/text "frontend/backend webview with server push"))
-      (let [!search (atom ""), search (e/watch !search)]
-        (ui/input search (e/fn [v] (reset! !search v))
-          (dom/props {:placeholder "Filter..."}))
+      (let [search (dom/input (dom/props {:placeholder "Filter..."}) (dom/Value.))]
         (dom/table (dom/props {:class "hyperfiddle"})
           (e/server
             (e/for [id (e/offload #(teeshirt-orders db search))]

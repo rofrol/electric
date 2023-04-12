@@ -8,6 +8,9 @@
 #?(:clj (defonce !msgs (atom (list))))
 (e/def msgs (e/server (reverse (pad 10 nil (e/watch !msgs)))))
 
+#?(:cljs (defn submit? [e] (and (= "Enter" (.-key e)) (not= "" (-> e .-target .-value)))))
+#?(:cljs (defn read-value! [node] (let [v (.-value node)] (set! (.-value node) "") v)))
+
 (e/defn Chat []
   (e/client
     (try
@@ -19,15 +22,15 @@
             (e/client
               (dom/li (dom/style {:visibility (if (nil? msg) "hidden" "visible")})
                 (dom/text msg))))))
-
       (dom/input
-        (dom/props {:placeholder "Type a message"})
-        (dom/on "keydown" (e/fn [e]
-                            (when (= "Enter" (.-key e))
-                              (when-some [v (empty->nil (-> e .-target .-value))]
-                                #_(dom/style {:background-color "yellow"})
-                                (e/server (swap! !msgs #(cons v (take 9 %))))
-                                (set! (.-value dom/node) ""))))))
+        (dom/for-each "keydown"
+          (e/fn [e]
+            (when (submit? e)
+              (let [v (read-value! dom/node)]
+                (try (e/server (swap! !msgs #(cons v (take 9 %)))) nil
+                     (catch Pending _ :keep)
+                     (catch :default e (.error js/console e)))))))
+        (dom/props {:placeholder "Type a message"}))
       (catch Pending e
         (dom/style {:background-color "yellow"})))))
 

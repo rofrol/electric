@@ -3,8 +3,7 @@
    [hyperfiddle.electric :as e]
    [hyperfiddle.electric-dom2 :as dom]
    [missionary.core :as m]
-   [clojure.math :as math]
-   [hyperfiddle.electric-ui4 :as ui]))
+   [clojure.math :as math]))
 
 ;; https://eugenkiss.github.io/7guis/tasks#temp
 
@@ -21,7 +20,11 @@
       (dom/dl
         (dom/dt (dom/text "Celsius"))
         (dom/dd
-          (ui/long (math/round t) (e/fn [v] (reset! !t v))))
+          (dom/input (dom/props {:type "number"})
+            (dom/on! "input" (fn [e] (when-some [v (-> e .-target .-value parse-long)] (reset! !t v))))
+            (dom/bind-value (math/round t))))
         (dom/dt (dom/text "Farenheit"))
         (dom/dd
-          (ui/long (math/round (c->f t)) (e/fn [v] (reset! !t (f->c v)))))))))
+          (dom/input (dom/props {:type "number"})
+            (dom/on! "input" (fn [e] (when-some [v (-> e .-target .-value parse-long)] (reset! !t (f->c v)) nil)))
+            (dom/bind-value (math/round (c->f t)))))))))
