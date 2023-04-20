@@ -27,7 +27,7 @@
   (e/client
     (dom/div
       (dom/h2 (dom/text "frontend/backend webview with server push"))
-      (let [search (dom/input (dom/props {:placeholder "Filter..."}) (dom/Value.))]
+      (let [search (dom/input (dom/props {:placeholder "Filter..."}) (dom/->value))]
         (dom/table (dom/props {:class "hyperfiddle"})
           (e/server
             (e/for [id (e/offload #(teeshirt-orders db search))]

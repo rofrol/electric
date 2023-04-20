@@ -18,7 +18,7 @@
   (e/client
     (dom/h1 (dom/text "JVM System Properties search"))
     (dom/div (dom/props {:style {:display "flex", :flex-direction "column"}})
-      (let [search (dom/input (dom/props {:type "search", :placeholder "java.home"}) (dom/Value.))]
+      (let [search (dom/input (dom/props {:type "search", :placeholder "java.home"}) (dom/->value))]
         (e/server
           (let [system-props (e/offload #(sort-by key (jvm-system-properties search)))
                 matched-count (count system-props)]

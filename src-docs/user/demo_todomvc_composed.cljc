@@ -7,16 +7,10 @@
 
 (def !n #?(:clj (atom 1)))
 
-(e/defn Hovered? []
-  (let [!hovered? (atom false)]
-    (dom/on! "mouseenter" (fn [_] (reset! !hovered? true)))
-    (dom/on! "mouseleave" (fn [_] (reset! !hovered? false)))
-    (e/watch !hovered?)))
-
 (e/defn PopoverCascaded [i F]
   (dom/div (dom/style {:position "absolute", :width "50vw"
                        :left (str (* i 40) "px"), :top (str (-> i (* 40) (+ 60)) "px")
-                       :z-index (+ i (if (Hovered?.) 1000 0))})
+                       :z-index (+ i (if (dom/hovered?) 1000 0))})
     (F.)))
 
 (e/defn TodoMVC-composed []
@@ -29,7 +23,7 @@
           (e/client
             (dom/link (dom/props {:rel :stylesheet, :href "/todomvc.css"}))
             (dom/input (dom/props {:type "range", :min 1, :max 25, :step 1})
-              (let [n (parse-long (dom/Value.))]
+              (let [n (parse-long (dom/->value))]
                 (e/server (reset! !n n))))
             (dom/div (dom/props {:class "todomvc" :style {:position "relative"}})
               (dom/h1 (dom/text "TodoMVC"))

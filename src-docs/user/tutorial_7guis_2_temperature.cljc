@@ -22,9 +22,9 @@
         (dom/dd
           (dom/input (dom/props {:type "number"})
             (dom/on! "input" (fn [e] (when-some [v (-> e .-target .-value parse-long)] (reset! !t v))))
-            (dom/bind-value (math/round t))))
+            (set! (.-value dom/node) (math/round t))))
         (dom/dt (dom/text "Farenheit"))
         (dom/dd
           (dom/input (dom/props {:type "number"})
             (dom/on! "input" (fn [e] (when-some [v (-> e .-target .-value parse-long)] (reset! !t (f->c v)) nil)))
-            (dom/bind-value (math/round (c->f t)))))))))
+            (set! (.-value dom/node) (math/round (c->f t)))))))))

@@ -1,9 +1,8 @@
 (ns user.demo-chat-extended
-  (:import [hyperfiddle.electric Pending])
   (:require
-   contrib.str
    [hyperfiddle.electric :as e]
-   [hyperfiddle.electric-dom2 :as dom]))
+   [hyperfiddle.electric-dom2 :as dom]
+   [hyperfiddle.electric-crud :as crud]))
 
 ; Fleshed out chat demo with auth and presence
 
@@ -12,9 +11,6 @@
 
 #?(:clj (defonce !present (atom {}))) ; session-id -> user
 (e/def present (e/server (e/watch !present)))
-
-#?(:cljs (defn submit? [e] (and (= "Enter" (.-key e)) (not= "" (-> e .-target .-value)))))
-#?(:cljs (defn read-value! [node] (let [v (.-value node)] (set! (.-value node) "") v)))
 
 (e/defn Chat-UI [username]
   (dom/p (dom/text "Present: "))
@@ -32,14 +28,7 @@
           (dom/li (dom/strong (dom/text username))
             (dom/text " " msg))))))
 
-  (dom/input
-    (dom/for-each "keydown"
-      (e/fn [e]
-        (when (submit? e)
-          (let [v (read-value! dom/node)]
-            (try (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %)))) nil
-                 (catch Pending _ (dom/style {:background-color "yellow"}) :keep)
-                 (catch :default e (.error js/console e)))))))
+  (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %)))))
     (dom/props {:placeholder "Type a message"})))
 
 (e/defn ChatExtended []

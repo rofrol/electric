@@ -16,7 +16,7 @@
     (dom/div (dom/props {:style {:display :grid, :width "20em", :grid-gap "0 1rem", :align-items :center}})
       (let [goal (dom/input (dom/props {:type "range", :min 0, :max 60, :value 10})
                    (dom/style {:grid-row 3, :grid-column 2})
-                   (parse-long (dom/Value.)))
+                   (parse-long (dom/->value)))
             goal-ms (* 1000 goal)
             !start (atom (now)), start (e/watch !start)
             time (min goal-ms (- (second-precision e/system-time-ms) start))]

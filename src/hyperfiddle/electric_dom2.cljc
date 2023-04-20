@@ -7,7 +7,7 @@
             [missionary.core :as m]
             [clojure.string :as str])
   (:import [hyperfiddle.electric Pending])
-  #?(:cljs (:require-macros [hyperfiddle.electric-dom2 :refer [with]])))
+  #?(:cljs (:require-macros [hyperfiddle.electric-dom2 :refer [with events->value]])))
 
 (e/def node)
 (def nil-subject (fn [!] (! nil) #()))
@@ -146,7 +146,7 @@
                (new (unmount-prop node (key prop#) nil))
                nil))))))
 
-#?(:cljs (def listen e/-listen)) ; private
+#?(:cljs (def listen* e/-listen)) ; private
 #?(:cljs (def event* e/event*))
 
 (defmacro on!
@@ -215,24 +215,54 @@
   ([v]        `(bind-value ~v set-val))
   ([v setter] `(let [v# ~v] (when-not (new Focused?) (~setter node v#)))))
 
-(defmacro *for-each [subject Fn]
-  `(let [push# (object-array 1)]
-     (into {}
-       (e/for [e# (->> (m/observe (fn [!#] (aset push# 0 !#) (~subject #(!# [:conj %]))))
-                    (m/reductions (fn [ac# [typ# v#]] (case typ# :conj (conj ac# v#) :disj (disj ac# v#))) #{})
-                    (m/relieve {}) new)]
-         (let [v# (new ~Fn e#)] (if v# [e# v#] (do ((aget push# 0) [:disj e#]) nil)))))))
+#?(:cljs (defn- -listen [node typ keep-fn opts]
+           (m/observe (fn [!] (listen* node typ #(when-some [v (keep-fn %)] (! v)) (clj->js opts))))))
 
-(defmacro for-each "Mounts `Fn` for each incoming event, unmounts `Fn` when it returns a falsy value.
+(defmacro listen
+  ([typ] `(listen node ~typ))
+  ([node typ] `(listen ~node ~typ identity))
+  ([node typ keep-fn] `(listen ~node ~typ ~keep-fn {}))
+  ([node typ keep-fn opts] (list `-listen node typ keep-fn opts)))
 
-  Multiple `Fn`s can be mounted and running concurrently.
-  Returns a map from running events to their return value.
-  Uncaught exceptions bubble up but don't unmount `Fn`."
-  ([event-type Fn] `(for-each node ~event-type ~Fn))
-  ([dom-node event-type Fn] `(*for-each (fn [!#] (listen ~dom-node ~event-type !# {})) ~Fn)))
+(defn- join [& flows] (->> flows m/seed (m/?> (count flows)) m/?> m/ap))
+(defmacro events->value [init & flows] `(->> (join ~@flows) (m/reductions {} ~init) (m/relieve {}) new))
 
-(e/defn Value [] (new (event* node "input" (.-value node) #(-> % .-target .-value) {})))
-(e/defn Checked? [] (new (event* node "change" (.-checked node) #(-> % .-target .-checked) {})))
+(defmacro focused?
+  ([] `(focused? node))
+  ([node] `(let [node# ~node]
+             (events->value (= node# (.-activeElement js/document))
+               (listen node# "focus" (constantly true))
+               (listen node# "blur" (constantly false))))))
+
+(defmacro hovered?
+  ([] `(hovered? node))
+  ([node] `(let [node# ~node]
+             (events->value false
+               (listen node# "mouseenter" (constantly true))
+               (listen node# "mouseleave" (constantly false))))))
+
+#?(:cljs (defn- goog-get [node k] (goog.object/get node k)))
+(defmacro ->value "Returns value of `node`'s `prop` on every event of type `typ`."
+  ([] `(->value "value"))
+  ([prop] `(->value "input" ~prop))
+  ([typ prop] `(->value dom/node ~typ ~prop))
+  ([node typ prop] `(let [node# ~node, typ# ~typ, prop# ~prop]
+                      (events->value (goog-get node# prop#)
+                        (listen node# typ# #(goog-get node# prop#))))))
+
+(e/def ErrorHandler (e/fn [ex v] (.error js/console v ex)))
+(e/def busy)
+
+(defmacro for-each [flow V! & body]
+  `(binding [busy (-> (e/for-event [v# ~flow]
+                        (try (new ~V! v#)                            false
+                             (catch hyperfiddle.electric.Pending ex# true)
+                             (catch missionary.Cancelled ex#         false)
+                             (catch :default ex#                     (new ErrorHandler ex# v#))))
+                    seq boolean)]
+     (dom/props {:aria-busy busy})
+     (when busy (throw (hyperfiddle.electric.Pending.)))
+     ~@body))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))

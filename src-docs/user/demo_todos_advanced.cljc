@@ -4,7 +4,8 @@
   (:require #?(:clj [datascript.core :as d]) ; database on server
             [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
-            [missionary.core :as m]))
+            [missionary.core :as m]
+            [hyperfiddle.electric-crud :as crud]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
 (comment (alter-var-root #'!conn (fn [_] (d/create-conn {}))))
@@ -26,14 +27,14 @@
 (e/defn Latency [min max init]
   (dom/span (dom/style {:display "inline-flex", :flex-direction "column"})
     (let [lat (dom/input (dom/props {:type "range" :min min, :max max, :value init, :style {:width "200px"}})
-                (parse-long (dom/Value.)))]
+                (parse-long (dom/->value)))]
       (dom/span (dom/text "Latency: " lat "ms") (dom/style {:order "-1"}))
       lat)))
 
 (e/defn FailRate [min max init]
   (dom/span (dom/style {:display "inline-flex", :flex-direction "column"})
     (let [rate (dom/input (dom/props {:type "range", :min min, :max max, :value init, :style {:width "200px"}})
-                 (parse-long (dom/Value.)))]
+                 (parse-long (dom/->value)))]
       (dom/span (dom/text "Fail Rate: " rate " out of " max) (dom/style {:order -1}))
       rate)))
 
@@ -45,20 +46,6 @@
           (->> (d/q '[:find [(pull ?e [:db/id :task/description :task/order]) ...] :where [?e :task/status]] db)
             (sort-by :task/order))))
 
-#?(:cljs (defn submit? [e] (and (= "Enter" (.-key e)) (not= "" (-> e .-target .-value)))))
-#?(:cljs (defn read-value! [node] (let [v (.-value node)] (set! (.-value node) "") v)))
-
-(def ->busy (comp boolean seq))
-
-(e/defn OnTick [id server-checked?]
-  (dom/for-each "change"
-    (e/fn [e]
-      (let [checked? (-> e .-target .-checked)]
-        (try (e/server (new Tx! [{:db/id id :task/status (if checked? :done :active)}]))
-             (catch Pending _ :keep)
-             (catch Cancelled _)
-             (catch :default e (.error js/console e) (set! (.-checked dom/node) server-checked?) nil))))))
-
 (e/defn TodoItem [id]
   (e/server
     (let [e (d/entity db id)
@@ -66,22 +53,22 @@
           server-checked? (= :done status)]
       (e/client
         (dom/div
-          (dom/input (dom/props {:type "checkbox"})
-            (let [busy (->busy (OnTick. id server-checked?))]
-              (dom/props {:disabled busy, :aria-busy busy})
-              (when-not busy (dom/bind-value server-checked? #(set! (.-checked %) %2))))
+          (crud/checkbox server-checked?
+            (e/fn [checked?]
+              (e/server (new Tx! [{:db/id id :task/status (if checked? :done :active)}])))
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
 
 (e/defn Failed [v]
   (dom/div (dom/text "💀 " v)
     (dom/button (dom/text "⟳")
-      (-> (dom/for-each "click"
-            (e/fn [_]
-              (try (e/server (new Tx! [(->task v)])) ::done
-                   (catch Pending _ (dom/props {:aria-busy true, :disabled true}) :keep)
-                   (catch Cancelled _ (prn :inner-cancelled))
-                   (catch :default e (.error js/console "retry" v e)))))
+      ;; currently broken due to Cancelled in userspace bug
+      ;; https://www.notion.so/hyperfiddle/no-Cancelled-in-userspace-3e516dba8cbe4ca082be3ac9879808d5?pvs=4
+      (-> (e/for-event [_ (dom/listen dom/node "click")]
+            (try (e/server (new Tx! [(->task v)])) ::done
+                 (catch Pending _ (dom/props {:aria-busy true, :disabled true}))
+                 (catch Cancelled _ (prn :inner-cancelled))
+                 (catch :default e (.error js/console "retry" v e))))
         vals first #{::done} not))))
 
 (e/defn AdvancedTodoList []
@@ -101,14 +88,12 @@
                     (e/server
                       (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
                         (TodoItem. id)))
-                    (dom/for-each in "keydown"
-                      (e/fn [e]
-                        (when (submit? e)
-                          (let [v (read-value! in)]
-                            (try (e/server (new Tx! [(->task v)]))
-                                 (catch Pending _ (dom/div (dom/text "⌛ " v)) :keep)
-                                 (catch Cancelled _ (prn :cancelled?))
-                                 (catch :default e (.error js/console v e) (Failed. v)))))))))
+                    (e/for-event [e (dom/listen in "keydown")]
+                      (when-some [v (crud/?read-value! e in)]
+                        (try (e/server (new Tx! [(->task v)]))
+                             (catch Pending _ (dom/div (dom/text "⌛ " v)) true)
+                             (catch Cancelled _ (prn :cancelled))
+                             (catch :default e (dom/ErrorHandler. e v) (Failed. v)))))))
                 (dom/p (dom/props {:class "counter"})
                   (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
                   (dom/text " items left"))))))))))

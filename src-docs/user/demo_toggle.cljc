@@ -1,8 +1,8 @@
 (ns user.demo-toggle
-  (:import [hyperfiddle.electric Pending])
   (:require
    [hyperfiddle.electric :as e]
-   [hyperfiddle.electric-dom2 :as dom]))
+   [hyperfiddle.electric-dom2 :as dom]
+   [hyperfiddle.electric-crud :as crud]))
 
 ; a full stack function with both frontend and backend parts,
 ; all defined in the same expression
@@ -25,7 +25,5 @@
                  true "ClojureScript (client)"
                  false "Clojure (server)")))
 
-    (dom/button (dom/text "toggle client/server")
-      (let [busy (-> (dom/for-each "click" (e/fn [_] (try (e/server (swap! !x not)) nil (catch Pending _ :keep))))
-                   seq boolean)]
-        (dom/props {:disabled busy, :aria-busy busy})))))
+    (crud/button (e/fn [_] (e/server (swap! !x not)))
+      (dom/text "toggle client/server"))))

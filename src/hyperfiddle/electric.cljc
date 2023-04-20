@@ -400,3 +400,16 @@ running on a remote host.
                               :delay  1000})))))))
 
 (def ^:dynamic *http-request* "Bound to the HTTP request of the page in which the current Electric program is running." nil)
+
+(cc/defn- ->set [mbx]
+  (->> mbx repeat m/seed m/?> m/? m/ap
+    (m/reductions (cc/fn [ac [t v]] ((case t :conj conj :disj disj) ac v)) #{})))
+
+;; (cc/defn- disj-async [mbx v] ((m/sp (m/? (m/sleep 200)) (mbx [:disj v])) {} {}))
+
+(cc/defmacro for-event [[sym discrete-flow] & body]
+  `(let [mbx# (m/mbx)]
+     (new (m/reductions {} nil (m/eduction (map #(mbx# [:conj %])) ~discrete-flow)))
+     (into {}
+       (e/for [~sym (new (->set mbx#))]
+         (let [v# (do ~@body)] (if v# [~sym v#] (do #_(disj-async mbx# ~sym) (mbx# [:disj ~sym]) nil)))))))

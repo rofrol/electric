@@ -1,7 +1,8 @@
 (ns user.tutorial-7guis-5-crud
   (:require [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [hyperfiddle.electric-crud :as crud]))
 
 ;;; Instructions
 ;; https://eugenkiss.github.io/7guis/tasks#crud
@@ -55,7 +56,7 @@
                                                  'j j j j'"})
         (dom/span (dom/style {:grid-area "a"})
           (dom/text "Filter prefix:"))
-        (let [needle (dom/input (dom/style {:grid-area "b"}) (dom/Value.))]
+        (let [needle (dom/input (dom/style {:grid-area "b"}) (dom/->value))]
           (dom/ul (dom/style {:grid-area "d", :background-color :white, :list-style-type :none
                               :padding 0, :border "1px gray solid", :height "100%"})
             (e/for [entry (filter-names (:names state) needle)]
@@ -67,15 +68,11 @@
                   (dom/on! "click" (fn [_] (select! id))))))))
         (let [stage (:stage state)]
           (dom/span (dom/style {:grid-area "e"}) (dom/text "Name:"))
-          (dom/input
-            (let [busy (-> (dom/for-each "input" (e/fn [e] (set-name! (-> e .-target .-value)) nil)) seq boolean)]
-              (when-not busy (dom/bind-value (:name stage)))
-              (dom/props {:style {:grid-area "f"}, :disabled busy, :aria-busy busy})))
+          (crud/input (:name stage) (e/fn [v] (set-name! v))
+            (dom/props {:style {:grid-area "f"}, :disabled busy, :aria-busy busy}))
           (dom/span (dom/style {:grid-area "g"}) (dom/text "Surname:"))
-          (dom/input
-            (let [busy (-> (dom/for-each "input" (e/fn [e] (set-surname! (-> e .-target .-value)) nil)) seq boolean)]
-              (when-not busy (dom/bind-value (:surname stage)))
-              (dom/props {:style {:grid-area "h"}, :disabled busy, :aria-busy busy}))))
+          (crud/input (:surname stage) (e/fn [v] (set-surname! v))
+            (dom/props {:style {:grid-area "h"}, :disabled busy, :aria-busy busy})))
         (dom/div (dom/style {:grid-area "j", :display :grid, :grid-gap "0.5rem"
                              :grid-template-columns "auto auto auto 1fr"})
           (dom/button (dom/text "Create") (dom/on! "click" (fn [_] (create!))))
