@@ -2,7 +2,7 @@
   (:require
    [hyperfiddle.electric :as e]
    [hyperfiddle.electric-dom2 :as dom]
-   [hyperfiddle.electric-ui4 :as ui]))
+   [hyperfiddle.electric-crud :as crud]))
 
 ; a full stack function with both frontend and backend parts,
 ; all defined in the same expression
@@ -25,6 +25,5 @@
                  true "ClojureScript (client)"
                  false "Clojure (server)")))
 
-    (ui/button (e/fn []
-                 (e/server (swap! !x not)))
+    (crud/button (e/fn [_] (e/server (swap! !x not)))
       (dom/text "toggle client/server"))))

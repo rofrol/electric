@@ -1,8 +1,8 @@
 (ns user.demo-chat-extended
   (:require
-   contrib.str
    [hyperfiddle.electric :as e]
-   [hyperfiddle.electric-dom2 :as dom]))
+   [hyperfiddle.electric-dom2 :as dom]
+   [hyperfiddle.electric-crud :as crud]))
 
 ; Fleshed out chat demo with auth and presence
 
@@ -28,14 +28,8 @@
           (dom/li (dom/strong (dom/text username))
             (dom/text " " msg))))))
 
-  (dom/input
-    (dom/props {:placeholder "Type a message"})
-    (dom/on "keydown" (e/fn [e]
-                        (when (= "Enter" (.-key e))
-                          (when-some [v (contrib.str/empty->nil (-> e .-target .-value))]
-                            (dom/style {:background-color "yellow"})
-                            (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %))))
-                            (set! (.-value dom/node) "")))))))
+  (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %)))))
+    (dom/props {:placeholder "Type a message"})))
 
 (e/defn ChatExtended []
   (e/client

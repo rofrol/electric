@@ -1,9 +1,9 @@
 (ns user.demo-chat
   (:import [hyperfiddle.electric Pending])
   (:require [contrib.data :refer [pad]]
-            [contrib.str :refer [empty->nil]]
             [hyperfiddle.electric :as e]
-            [hyperfiddle.electric-dom2 :as dom]))
+            [hyperfiddle.electric-dom2 :as dom]
+            [hyperfiddle.electric-crud :as crud]))
 
 #?(:clj (defonce !msgs (atom (list))))
 (e/def msgs (e/server (reverse (pad 10 nil (e/watch !msgs)))))
@@ -19,15 +19,8 @@
             (e/client
               (dom/li (dom/style {:visibility (if (nil? msg) "hidden" "visible")})
                 (dom/text msg))))))
-
-      (dom/input
-        (dom/props {:placeholder "Type a message"})
-        (dom/on "keydown" (e/fn [e]
-                            (when (= "Enter" (.-key e))
-                              (when-some [v (empty->nil (-> e .-target .-value))]
-                                #_(dom/style {:background-color "yellow"})
-                                (e/server (swap! !msgs #(cons v (take 9 %))))
-                                (set! (.-value dom/node) ""))))))
+      (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons v (take 9 %)))))
+        (dom/props {:placeholder "Type a message"}))
       (catch Pending e
         (dom/style {:background-color "yellow"})))))
 

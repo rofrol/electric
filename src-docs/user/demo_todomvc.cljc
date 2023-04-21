@@ -6,7 +6,7 @@
    #?(:clj [datascript.core :as d])
    [hyperfiddle.electric :as e]
    [hyperfiddle.electric-dom2 :as dom]
-   [hyperfiddle.electric-ui4 :as ui]))
+   [hyperfiddle.electric-crud :as crud]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil))       ; server
 (e/def db)                                                  ; server
@@ -36,7 +36,7 @@
 (e/defn Filter-control [state target label]
   (dom/a (dom/props {:class (when (= state target) "selected")})
     (dom/text label)
-    (dom/on "click" (e/fn [_] (swap! !state assoc ::filter target)))))
+    (dom/on! "click" (fn [_] (swap! !state assoc ::filter target)))))
 
 
 (e/defn TodoStats [state]
@@ -53,10 +53,10 @@
         (dom/li (Filter-control. (::filter state) :done "Completed")))
 
       (when (pos? done)
-        (ui/button (e/fn [] (e/server (when-some [ids (seq (query-todos db :done))]
-                                          (transact! (mapv (fn [id] [:db/retractEntity id]) ids)) nil)))
-          (dom/props {:class "clear-completed"})
-          (dom/text "Clear completed " done))))))
+        (crud/button (e/fn [_] (e/server (when-some [ids (seq (query-todos db :done))]
+                                           (transact! (mapv (fn [id] [:db/retractEntity id]) ids)) nil)))
+          (dom/text "Clear completed " done)
+          (dom/props {:class "clear-completed"}))))))
 
 (e/defn TodoItem [state id]
   (e/server
@@ -66,29 +66,26 @@
           (dom/props {:class [(when (= :done status) "completed")
                               (when (= id (::editing state)) "editing")]})
           (dom/div (dom/props {:class "view"})
-            (ui/checkbox (= :done status) (e/fn [v]
-                                              (let [status (case v true :done, false :active, nil)]
+            (crud/checkbox (= :done status) (e/fn [checked?]
+                                              (let [status (case checked? true :done, false :active, nil)]
                                                 (e/server (transact! [{:db/id id, :task/status status}]) nil)))
               (dom/props {:class "toggle"}))
             (dom/label (dom/text description)
-                       (dom/on "dblclick" (e/fn [_] (swap! !state assoc ::editing id)))))
+              (dom/on! "dblclick" (fn [_] (swap! !state assoc ::editing id)))))
           (when (= id (::editing state))
             (dom/span (dom/props {:class "input-load-mask"})
-              (dom/on-pending (dom/props {:aria-busy true})
-                (dom/input
-                  (dom/on "keydown"
-                    (e/fn [e]
-                      (case (.-key e)
-                        "Enter" (when-some [description (contrib.str/blank->nil (-> e .-target .-value))]
-                                  (case (e/server (transact! [{:db/id id, :task/description description}]) nil)
-                                    (swap! !state assoc ::editing nil)))
-                        "Escape" (swap! !state assoc ::editing nil)
-                        nil)))
-                  (dom/props {:class "edit" #_#_:autofocus true})
-                  (dom/bind-value description) ; first set the initial value, then focus
-                  (case description ; HACK sequence - run focus after description is available
-                    (.focus dom/node))))))
-          (ui/button (e/fn [] (e/server (transact! [[:db/retractEntity id]]) nil))
+              (dom/props
+                {:aria-busy
+                 (crud/enter (e/fn [desc]
+                               (case (e/server (transact! [{:db/id id, :task/description desc}]) nil)
+                                 (swap! !state assoc ::editing nil)))
+                   (dom/props {:class "edit"})
+                   (dom/on! "keydown" #(case (.-key %) "Escape" (swap! !state dissoc ::editing) nil))
+                   (when-not e/busy (set! (.-value dom/node) description))
+                   (case description ; HACK sequence - run focus after description is available
+                     (.focus dom/node))
+                   e/busy)})))
+          (crud/button (e/fn [_] (e/server (transact! [[:db/retractEntity id]]) nil))
             (dom/props {:class "destroy"})))))))
 
 #?(:clj
@@ -102,13 +99,12 @@
       (dom/section (dom/props {:class "main"})
         (let [active (e/server (todo-count db :active))
               all    (e/server (todo-count db :all))
-              done   (e/server (todo-count db :done))]
-          (ui/checkbox (cond (= all done)   true
-                             (= all active) false
-                             :else          nil)
-            (e/fn [v] (let [status (case v (true nil) :done, false :active)]
-                        (e/server (transact! (toggle-all! db status)) nil)))
-            (dom/props {:class "toggle-all"})))
+              done   (e/server (todo-count db :done))
+              checked (cond (= all done) true, (= all active) false, :else nil)]
+          (crud/checkbox checked (e/fn [checked?]
+                                   (let [status (case checked? (true nil) :done, false :active)]
+                                     (e/server (transact! (toggle-all! db status)) nil)))
+            (dom/props {:type "checkbox", :class "toggle-all"})))
         (dom/label (dom/props {:for "toggle-all"}) (dom/text "Mark all as complete"))
         (dom/ul (dom/props {:class "todo-list"})
           (e/for [id (e/server (sort (query-todos db (::filter state))))]
@@ -116,15 +112,12 @@
 
 (e/defn CreateTodo []
   (dom/span (dom/props {:class "input-load-mask"})
-    (dom/on-pending (dom/props {:aria-busy true})
-      (dom/input
-        (dom/on "keydown"
-          (e/fn [e]
-            (when (= "Enter" (.-key e))
-              (when-some [description (contrib.str/empty->nil (-> e .-target .-value))]
-                (e/server (transact! [{:task/description description, :task/status :active}]) nil)
-                (set! (.-value dom/node) "")))))
-        (dom/props {:class "new-todo", :placeholder "What needs to be done?"})))))
+    (dom/props
+      {:aria-busy
+       (crud/enter (e/fn [description]
+                     (e/server (transact! [{:task/description description, :task/status :active}]) nil))
+         (dom/props {:class "new-todo", :placeholder "What needs to be done?"})
+         e/busy)})))
 
 (e/defn TodoMVC-UI [state]
   (dom/section (dom/props {:class "todoapp"})
@@ -149,9 +142,10 @@
     (dom/dt (dom/text "query :all")) (dom/dd (dom/text (pr-str (e/server (query-todos db :all)))))
     (dom/dt (dom/text "state")) (dom/dd (dom/text (pr-str state)))
     (dom/dt (dom/text "delay")) (dom/dd
-                                   (ui/long (::delay state) (e/fn [v] (swap! !state assoc ::delay v))
-                                     (dom/props {:step 1, :min 0, :style {:width :min-content}}))
-                                   (dom/text " ms"))))
+                                  (dom/input (dom/props {:type "number" :step 1, :min 0, :style {:width :min-content}})
+                                    (when-some [v (parse-long (dom/->value))]
+                                      (swap! !state assoc ::delay v )))
+                                  (dom/text " ms"))))
 
 #?(:clj
    (defn slow-transact! [!conn delay tx]

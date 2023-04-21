@@ -2,8 +2,7 @@
   (:require
    [clojure.string :as str]
    [hyperfiddle.electric :as e]
-   [hyperfiddle.electric-dom2 :as dom]
-   [hyperfiddle.electric-ui4 :as ui]))
+   [hyperfiddle.electric-dom2 :as dom]))
 
 ; A web view that queries the backend JVM environment and writes it to the
 ; frontend dom, all in a single composed expression.
@@ -18,19 +17,17 @@
 (e/defn SystemProperties []
   (e/client
     (dom/h1 (dom/text "JVM System Properties search"))
-    (let [!search (atom "")
-          search (e/watch !search)]
-      (e/server
-        (let [system-props (e/offload #(sort-by key (jvm-system-properties search)))
-              matched-count (count system-props)]
-          (e/client
-            (dom/div (dom/props {:style {:color "gray"}}) (dom/text matched-count " matches"))
-            (ui/input search (e/fn [v] (reset! !search v))
-              (dom/props {:type "search" :placeholder "java.home"}))
-            (dom/table
-              (e/server
-                (e/for-by first [[k v] system-props]
-                  (e/client
-                    (dom/tr
-                      (dom/td (dom/text k))
-                      (dom/td (dom/props {:style {:white-space :nowrap}}) (dom/text v)))))))))))))
+    (dom/div (dom/props {:style {:display "flex", :flex-direction "column"}})
+      (let [search (dom/input (dom/props {:type "search", :placeholder "java.home"}) (dom/->value))]
+        (e/server
+          (let [system-props (e/offload #(sort-by key (jvm-system-properties search)))
+                matched-count (count system-props)]
+            (e/client
+              (dom/table
+                (e/server
+                  (e/for-by first [[k v] system-props]
+                    (e/client
+                      (dom/tr
+                        (dom/td (dom/text k))
+                        (dom/td (dom/props {:style {:white-space :nowrap}}) (dom/text v)))))))
+              (dom/div (dom/props {:style {:color "gray", :order -1}}) (dom/text matched-count " matches")))))))))
