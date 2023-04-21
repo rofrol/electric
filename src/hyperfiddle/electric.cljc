@@ -327,9 +327,13 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
   (try (server
          (when-some [ex (io/get-original-ex id)]
            (println ex)
-           (try (client (js/console.log "server logged the root exception"))
-                (catch Pending _))))
-       (catch Pending _)))
+           (try (client (println "server logged the root exception"))
+                (catch Pending _ true)))) ; return true for `for-event`
+       (catch Pending _ true)))           ; return true for `for-event`
+
+(defmacro print-client-exception [ex]
+  `(.error js/console (str (ex-message ~ex) "\n\n" (dbg/stack-trace trace)) "\n\n"
+     (-> trace dbg/ex-id io/get-original-ex (or ~ex))))
 
 (defmacro with-zero-config-entrypoint [& body]
   `(try
@@ -337,9 +341,7 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
      (catch Pending _#)                 ; silently ignore
      (catch Cancelled e# (throw e#))    ; bypass catchall, app is shutting down
      (catch :default err#               ; note client bias
-       (js/console.error
-         (str (ex-message err#) "\n\n" (dbg/stack-trace hyperfiddle.electric/trace)) "\n\n"
-         (or (io/get-original-ex (dbg/ex-id hyperfiddle.electric/trace)) err#))
+       (print-client-exception err#)
        (new ?PrintServerException (dbg/ex-id hyperfiddle.electric/trace)))))
 
 (defmacro boot "
@@ -405,24 +407,42 @@ running on a remote host.
   (->> mbx repeat m/seed m/?> m/? m/ap
     (m/reductions (cc/fn [ac [t v]] ((case t :conj conj :disj disj) ac v)) #{})))
 
-;; (cc/defn- disj-async [mbx v] ((m/sp (m/? (m/sleep 200)) (mbx [:disj v])) {} {}))
+(cc/defn- ->unique [_] #?(:clj (Object.) :cljs (js/Object.)))
 
-(cc/defmacro for-event [[sym discrete-flow] & body]
+(defmacro for-event "Runs `body` for each value of missionary `discrete-flow` bound to `sym`.
+
+  Useful to process a discrete event stream (e.g. DOM events) in Electric."
+  [[sym discrete-flow] & body]
   `(let [mbx# (m/mbx)]
      (new (m/reductions {} nil (m/eduction (map #(mbx# [:conj %])) ~discrete-flow)))
      (into {}
-       (e/for [~sym (new (->set mbx#))]
-         (let [v# (do ~@body)] (if v# [~sym v#] (do #_(disj-async mbx# ~sym) (mbx# [:disj ~sym]) nil)))))))
+       (e/for-by ->unique [~sym (new (->set mbx#))]
+         (let [v# (do ~@body)] (if v# [~sym v#] (do (mbx# [:disj ~sym]) nil)))))))
 
-(hyperfiddle.electric/def ErrorHandler (hyperfiddle.electric/fn [ex v] (.error js/console v ex)))
-(hyperfiddle.electric/def busy)
+(hyperfiddle.electric/def EventExceptionHandler "Default error handler for `each-event`.
 
-(cc/defmacro each-event [flow V! & body]
-  `(binding [busy (-> (for-event [[_# v#] (m/eduction (map #(vector (random-uuid) %)) ~flow)]
+Prints the reactive exception and returns `nil`."
+  (hyperfiddle.electric/fn [ex v]
+    (println "an exception was raised when handling event" v)
+    (print-client-exception ex)
+    (new ?PrintServerException (dbg/ex-id hyperfiddle.electric/trace))))
+
+(hyperfiddle.electric/def busy "`true` while any `each-event` callbacks are running.")
+
+(defmacro each-event "Runs `V!` for each value of missionary `discrete-flow` and `body` in context of `busy`.
+
+  `V!` is unmounted once it doesn't throw `Pending`.
+  `body` has access to `busy`, which is true when any callbacks are running.
+  Uncaught exceptions are by default printed with a reactive stack trace.
+  One can override exception handling by binding `EventExceptionHandler`.
+  Returns result of `body` or throws `Pending` when any callbacks are running.
+  This is a high-level wrapper of `for-event` with sane defaults."
+  [flow V! & body]
+  `(binding [busy (-> (for-event [v# ~flow]
                         (try (new ~V! v#)                            false
                              (catch hyperfiddle.electric.Pending ex# true)
                              (catch missionary.Cancelled ex#         false)
-                             (catch :default ex#                     (new ErrorHandler ex# v#))))
+                             (catch :default ex#                     (new EventExceptionHandler ex# v#))))
                     seq boolean)]
      (when busy (throw (hyperfiddle.electric.Pending.)))
      ~@body))
