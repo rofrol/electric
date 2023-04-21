@@ -93,7 +93,7 @@
                         (try (e/server (new Tx! [(->task v)]))
                              (catch Pending _ (dom/div (dom/text "⌛ " v)) true)
                              (catch Cancelled _ (prn :cancelled))
-                             (catch :default e (dom/ErrorHandler. e v) (Failed. v)))))))
+                             (catch :default e (e/ErrorHandler. e v) (Failed. v)))))))
                 (dom/p (dom/props {:class "counter"})
                   (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
                   (dom/text " items left"))))))))))

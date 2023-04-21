@@ -413,3 +413,16 @@ running on a remote host.
      (into {}
        (e/for [~sym (new (->set mbx#))]
          (let [v# (do ~@body)] (if v# [~sym v#] (do #_(disj-async mbx# ~sym) (mbx# [:disj ~sym]) nil)))))))
+
+(hyperfiddle.electric/def ErrorHandler (hyperfiddle.electric/fn [ex v] (.error js/console v ex)))
+(hyperfiddle.electric/def busy)
+
+(cc/defmacro each-event [flow V! & body]
+  `(binding [busy (-> (for-event [[_# v#] (m/eduction (map #(vector (random-uuid) %)) ~flow)]
+                        (try (new ~V! v#)                            false
+                             (catch hyperfiddle.electric.Pending ex# true)
+                             (catch missionary.Cancelled ex#         false)
+                             (catch :default ex#                     (new ErrorHandler ex# v#))))
+                    seq boolean)]
+     (when busy (throw (hyperfiddle.electric.Pending.)))
+     ~@body))

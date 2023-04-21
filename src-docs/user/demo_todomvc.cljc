@@ -81,10 +81,10 @@
                                  (swap! !state assoc ::editing nil)))
                    (dom/props {:class "edit"})
                    (dom/on! "keydown" #(case (.-key %) "Escape" (swap! !state dissoc ::editing) nil))
-                   (when-not dom/busy (set! (.-value dom/node) description))
+                   (when-not e/busy (set! (.-value dom/node) description))
                    (case description ; HACK sequence - run focus after description is available
                      (.focus dom/node))
-                   dom/busy)})))
+                   e/busy)})))
           (crud/button (e/fn [_] (e/server (transact! [[:db/retractEntity id]]) nil))
             (dom/props {:class "destroy"})))))))
 
@@ -117,7 +117,7 @@
        (crud/enter (e/fn [description]
                      (e/server (transact! [{:task/description description, :task/status :active}]) nil))
          (dom/props {:class "new-todo", :placeholder "What needs to be done?"})
-         dom/busy)})))
+         e/busy)})))
 
 (e/defn TodoMVC-UI [state]
   (dom/section (dom/props {:class "todoapp"})

@@ -250,20 +250,6 @@
                       (events->value (goog-get node# prop#)
                         (listen node# typ# #(goog-get node# prop#))))))
 
-(e/def ErrorHandler (e/fn [ex v] (.error js/console v ex)))
-(e/def busy)
-
-(defmacro for-each [flow V! & body]
-  `(binding [busy (-> (e/for-event [v# ~flow]
-                        (try (new ~V! v#)                            false
-                             (catch hyperfiddle.electric.Pending ex# true)
-                             (catch missionary.Cancelled ex#         false)
-                             (catch :default ex#                     (new ErrorHandler ex# v#))))
-                    seq boolean)]
-     (dom/props {:aria-busy busy})
-     (when busy (throw (hyperfiddle.electric.Pending.)))
-     ~@body))
-
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))
 (defmacro address [& body] `(element :address ~@body))

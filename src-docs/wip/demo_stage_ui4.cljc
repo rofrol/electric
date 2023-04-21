@@ -1,10 +1,11 @@
 (ns wip.demo-stage-ui4
-  (:require [contrib.css :refer [css-slugify]]
-            [contrib.str :refer [pprint-str]]
-            #?(:clj [contrib.datomic-contrib :as dx])
+  (:require #?(:clj [contrib.datomic-contrib :as dx])
             #?(:clj [datomic.client.api :as d])
+            [contrib.css :refer [css-slugify]]
+            [contrib.str :refer [pprint-str]]
             [hyperfiddle.api :as hf]
             [hyperfiddle.electric :as e]
+            [hyperfiddle.electric-crud :as crud]
             [hyperfiddle.electric-dom2 :as dom]
             [hyperfiddle.electric-ui4 :as ui]
             [hyperfiddle.popover :refer [Popover]]))
@@ -43,21 +44,28 @@
       (dom/dl
 
         (dom/dt (dom/text "id"))
-        (dom/dd (ui/input (:db/id record) nil (dom/props {::dom/disabled true})))
+        (dom/dd (crud/input (:db/id record) nil (dom/props {:disabled true})))
 
         (dom/dt "gid")
-        (dom/dd (ui/uuid (:label/gid record) nil (dom/props {::dom/disabled true})))
+        (dom/dd (crud/uuid (:label/gid record) nil (dom/props {::dom/disabled true})))
 
-        (dom/dt (dom/text "name"))
-        (dom/dd (ui/input (:label/name record)
-                          (e/fn [v]
-                              (println 'input! v)
-                              (e/server #_(when true) (hf/Transact!. [[:db/add e :label/name v]])))))
+        (dom/dt (dom/text "name1"))
+        (dom/dd (crud/input (:label/name record)
+                  (e/fn [v]
+                    (println 'input! v)
+                    (e/server (hf/Transact!. [[:db/add e :label/name v]])))
+                  (dom/props {:id "name1"})))
+
+        (dom/dt (dom/text "name2"))
+        (dom/dd (crud/input (:label/name record)
+                  (e/fn [v]
+                    (println 'input! v)
+                    (e/server (hf/Transact!. [[:db/add e :label/name v]])))
+                  (dom/props {:id "name2"})))
 
         (dom/dt (dom/text "sortName"))
-        (dom/dd (ui/input (:label/sortName record)
-                          (e/fn [v] (e/server (hf/Transact!. [[:db/add e :label/sortName v]])))))
-
+        (dom/dd (crud/input (:label/sortName record)
+                  (e/fn [v] (e/server (hf/Transact!. [[:db/add e :label/sortName v]])))))
 
         (dom/dt (dom/text "type"))
         (dom/dd (e/server
@@ -70,9 +78,8 @@
         ; country
 
         (dom/dt (dom/text "startYear"))
-        (dom/dd (ui/long (:label/startYear record)
-                         (e/fn [v] (e/server (hf/Transact!. [[:db/add e :label/startYear v]])))))
-        )
+        (dom/dd (crud/long (:label/startYear record)
+                  (e/fn [v] (e/server (hf/Transact!. [[:db/add e :label/startYear v]]))))))
 
       (dom/pre (dom/text (pprint-str record))))))
 

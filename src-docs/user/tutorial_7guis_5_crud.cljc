@@ -69,10 +69,10 @@
         (let [stage (:stage state)]
           (dom/span (dom/style {:grid-area "e"}) (dom/text "Name:"))
           (crud/input (:name stage) (e/fn [v] (set-name! v))
-            (dom/props {:style {:grid-area "f"}, :disabled busy, :aria-busy busy}))
+            (dom/props {:style {:grid-area "f"}}))
           (dom/span (dom/style {:grid-area "g"}) (dom/text "Surname:"))
           (crud/input (:surname stage) (e/fn [v] (set-surname! v))
-            (dom/props {:style {:grid-area "h"}, :disabled busy, :aria-busy busy})))
+            (dom/props {:style {:grid-area "h"}})))
         (dom/div (dom/style {:grid-area "j", :display :grid, :grid-gap "0.5rem"
                              :grid-template-columns "auto auto auto 1fr"})
           (dom/button (dom/text "Create") (dom/on! "click" (fn [_] (create!))))
