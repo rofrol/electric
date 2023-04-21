@@ -1997,3 +1997,63 @@
        % := 2
        )))
 
+(tests "for-event"
+  (def ! (atom nil))
+  (def !resolvers (atom {}))
+  (defn !! [k v] (reset! (@!resolvers k) v))
+  (with (p/run (tap (try (p/for-event [e (m/observe (fn [!!] (reset! ! !!) #(do)))]
+                           (let [!v (atom :pending)]
+                             (swap! !resolvers assoc e !v)
+                             (try (let [v (p/watch !v)]
+                                    (case v
+                                      :pending (throw (Pending.))
+                                      :caught (throw (ex-info "caught" {}))
+                                      :uncaught (throw (ex-info "uncaught" {}))
+                                      #_else v))
+                                  (catch Pending _ :pending)
+                                  (catch #?(:clj Throwable :cljs :default) e
+                                    (case (ex-message e)
+                                      "caught" nil
+                                      #_else (throw e))))))
+                         (catch #?(:clj Throwable :cljs :default) e [(type e) (ex-message e)]))))
+    #_init             % := {}
+    (@! 0),            % := {0 :pending}
+    (@! 1),            % := {0 :pending, 1 :pending}
+    (!! 1 nil),        % := {0 :pending}
+    (!! 0 false),      % := {}
+    (@! 2),            % := {2 :pending}
+    (!! 2 :caught),    % := {}
+    (@! 99),           % := {99 :pending}
+    (!! 99 :uncaught), % := [ExceptionInfo "uncaught"]
+    (!! 99 :alive),    % := {99 :alive}
+    (!! 99 nil),       % := {}
+
+    (tap ::done), % := ::done, (println " ok")))
+
+(tests "each-event"
+  (def ! (atom nil))
+  (def !resolvers (atom {}))
+  (defn !! [k v] (reset! (@!resolvers k) v))
+  (with (p/run (tap (try (binding [p/EventExceptionHandler (p/fn [ex v] (tap [:ex-handler (type ex) v]) nil)]
+                           (p/each-event (m/observe (fn [!!] (reset! ! !!) #(do)))
+                             (p/fn [e]
+                               (let [!v (atom :pending)]
+                                 (swap! !resolvers assoc e !v)
+                                 (let [v (p/watch !v)]
+                                   (case v
+                                     :pending (throw (Pending.))
+                                     :ex (throw (ex-info "ex" {}))
+                                     #_else v))))
+                             (tap [:busy p/busy])
+                             :ret))
+                         (catch #?(:clj Throwable :cljs :default) e [(type e) (ex-message e)]))))
+
+    #_init                                            % := [:busy false], % := :ret
+    (@! 0),                                           % := [:busy true],  % := [Pending nil]
+    (@! 1)
+    (!! 1 nil)
+    (!! 0 false),                                     % := [:busy false], % := :ret
+    (@! 2),                                           % := [:busy true],  % := [Pending nil]
+    (!! 2 :ex),   % := [:ex-handler ExceptionInfo 2], % := [:busy false], % := :ret
+
+    (tap ::done), % := ::done, (println " ok")))
