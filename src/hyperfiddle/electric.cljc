@@ -11,7 +11,7 @@
             [hyperfiddle.electric.impl.io :as io]
             [hyperfiddle.electric.debug :as dbg])
   #?(:cljs (:require-macros [hyperfiddle.electric :refer [def defn fn boot for for-by local run debounce wrap on-unmount]]))
-  (:import #?(:clj (clojure.lang IDeref))
+  (:import #?(:clj (clojure.lang IDeref IFn))
            (hyperfiddle.electric Pending Failure FailureInfo)
            (missionary Cancelled)))
 
@@ -323,6 +323,15 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
   Standard electric code runs on mount, therefore there is no `on-mount`."
   [f] `(new (m/observe (cc/fn [!#] (!# nil) ~f)))) ; experimental
 
+(cc/defn -on-cancel [f]
+  (cc/fn [n t]
+    (n)
+    (reify
+      IFn (#?(:clj invoke :cljs -invoke) [_] (f) (t))
+      IDeref (#?(:clj deref :cljs -deref) [_]))))
+
+(defmacro on-cancel [f] `(new (-on-cancel ~f)))
+
 (defn ?PrintServerException [id]
   (try (server
          (when-some [ex (io/get-original-ex id)]
@@ -331,10 +340,9 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
                 (catch Pending _ true)))) ; return true for `for-event`
        (catch Pending _ true)))           ; return true for `for-event`
 
-(defn -prn-error [& args] (apply #?(:clj prn :cljs js/console.error) args))
 (defmacro print-client-exception [ex]
-  `(-prn-error (str (ex-message ~ex) "\n\n" (dbg/stack-trace trace)) "\n\n"
-     (-> trace dbg/ex-id io/get-original-ex (or ~ex))))
+  `(~(if (:ns &env) 'js/console.error 'prn) (str (ex-message ~ex) "\n\n" (dbg/stack-trace trace)) "\n\n"
+    (-> trace dbg/ex-id io/get-original-ex (or ~ex))))
 
 (defmacro with-zero-config-entrypoint [& body]
   `(try
@@ -404,21 +412,39 @@ running on a remote host.
 
 (def ^:dynamic *http-request* "Bound to the HTTP request of the page in which the current Electric program is running." nil)
 
-(cc/defn ->set [mbx]
+(defmacro check-electric [fn form]
+  (if (bound? #'c/*env*)
+    form
+    (throw (ex-info (str "Electric code (" fn ") inside a Clojure function") (into {:electric-fn fn} (meta &form))))))
+
+
+;; https://github.com/weavejester/medley/blob/master/src/medley/core.cljc
+;; https://clojure.atlassian.net/browse/CLJ-1451
+(cc/defn take-upto [pred]
+  (cc/fn [rf] (cc/fn ([] (rf))  ([ac] (rf ac))  ([ac nx] (cond-> (rf ac nx) (pred nx) ensure-reduced)))))
+
+(cc/defn -snapshot [flow] (->> flow (m/eduction (take-upto (complement #{r/pending})))))
+(defmacro snapshot "Snapshots the first non-pending value of `x` and stops updating afterwards."
+  [x] `(check-electric snapshot (new (-snapshot (hyperfiddle.electric/fn [] ~x)))))
+
+(cc/defn ->map [mbx]
   (->> mbx repeat m/seed m/?> m/? m/ap
-    (m/reductions (cc/fn [ac [t v]] ((case t :conj conj :disj disj) ac v)) #{})))
+    (m/reductions (cc/fn [ac [t k v]] (case t :assoc (assoc ac k v) :dissoc (dissoc ac k))) {})))
 
-(cc/defn ->unique [_] #?(:clj (Object.) :cljs (js/Object.)))
+(cc/defn ->unique [] #?(:clj (Object.) :cljs (js/Object.)))
 
-(defmacro for-event "Runs `body` for each value of missionary `discrete-flow` bound to `sym`.
+(defmacro for-event "Runs `body` for each value of missionary `>flow` bound to `sym`.
+
+  When `body` returns a falsy value `for-event` unmounts it.
+  Exceptions bubble up.
+  Returns a vector of running `body` results.
 
   Useful to process a discrete event stream (e.g. DOM events) in Electric."
-  [[sym discrete-flow] & body]
+  [[sym >flow] & body]
   `(let [mbx# (m/mbx)]
-     (new (m/reductions {} nil (m/eduction (map #(mbx# [:conj %])) ~discrete-flow)))
-     (into {}
-       (for-by ->unique [~sym (new (->set mbx#))]
-         (let [v# (do ~@body)] (if v# [~sym v#] (do (mbx# [:disj ~sym]) nil)))))))
+     (new (m/reductions {} nil (m/eduction (map #(mbx# [:assoc (->unique) %])) ~>flow)))
+     (for-by first [[k# ~sym] (new (->map mbx#))]
+       (let [v# (do ~@body)] (if v# v# (do (mbx# [:dissoc k#]) nil))))))
 
 (hyperfiddle.electric/def EventExceptionHandler "Default error handler for `each-event`.
 
@@ -438,8 +464,8 @@ Prints the reactive exception and returns `nil`."
   One can override exception handling by binding `EventExceptionHandler`.
   Returns result of `body` or throws `Pending` when any callbacks are running.
   This is a high-level wrapper of `for-event` with sane defaults."
-  [flow V! & body]
-  `(binding [busy (-> (for-event [v# ~flow]
+  [>flow V! & body]
+  `(binding [busy (-> (for-event [v# ~>flow]
                         (try (new ~V! v#)                            false
                              (catch hyperfiddle.electric.Pending ex# true)
                              (catch missionary.Cancelled ex#         false)

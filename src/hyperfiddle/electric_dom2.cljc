@@ -6,7 +6,8 @@
             [hyperfiddle.electric :as e]
             [missionary.core :as m]
             [clojure.string :as str]
-            [contrib.data :as data])
+            [contrib.data :as data]
+            [contrib.debug :as dbg])
   (:import [hyperfiddle.electric Pending])
   #?(:cljs (:require-macros [hyperfiddle.electric-dom2 :refer [with events->value]])))
 
@@ -129,7 +130,6 @@
        (new (unmount-prop node {(key sty#) nil}))
        nil)))
 
-
 (def LAST-PROPS
   "Due to a bug in both Webkit and FF, input type range's knob renders in the
   wrong place if value is set after `min` and `max`, and `max` is above 100.
@@ -140,6 +140,41 @@
   [props-map]
   (let [props (apply dissoc props-map LAST-PROPS)]
     (concat (seq props) (seq (select-keys props-map LAST-PROPS)))))
+
+#?(:cljs (defn- gobj-get [o k] (goog.object/get o k)))
+#?(:cljs (defn- gobj-set [o k v] (goog.object/set o k v)))
+#?(:cljs (defn- gobj-contains-key [o k] (goog.object/containsKey o k)))
+#?(:cljs (defn- gobj-remove [o k] (goog.object/remove o k)))
+
+;; currently doesn't work as one would like
+;; stacking is broken because
+;; - (do a b) mounts a then b, but this is UB in theory
+;; - (do a b) cancels a then b (also UB though) but for stacking we'd need b then a
+;; - a `case` switch from a to b has both of them alive for a short duration,
+;;   during which b already mounts but b's children didn't get cancellation yet
+(defn- -prop [o pairs]
+  (let [obj (gensym "obj")]
+    `(let [~obj ~o]
+       ~@(for [[k v] (partition 2 pairs)]
+           `(let [k# (name ~k)
+                  reset# (if (gobj-contains-key ~obj k#)
+                           (let [oldv# (gobj-get ~obj k#)] #(gobj-set ~obj k# oldv#))
+                           #(gobj-remove ~obj k#))]
+              (gobj-set ~obj k# ~v)
+              (e/on-cancel reset#))))))
+
+(defmacro >>prop [& pairs] (-prop `node pairs))
+(defmacro >>style [& pairs] (-prop `(.-style node) pairs))
+
+(defn- -prop-token-list [o vs]
+  (let [obj (gensym "obj")]
+    `(let [~obj ~o]
+       ~@(for [v vs]
+           `(let [v# ~v, reset# (if (.contains ~obj v#) #() #(.remove ~obj v#))]
+              (.add ~obj v#)
+              (e/on-cancel reset#))))))
+
+(defmacro >>class [& classes] (-prop-token-list `(.-classList node) classes))
 
 ;; TODO JS runtimes intern litteral strings, so call `name` on keywords at
 ;; macroexpension.
@@ -260,15 +295,13 @@
                (listen node# "mouseenter" (constantly true))
                (listen node# "mouseleave" (constantly false))))))
 
-#?(:cljs (defn- goog-get [node k] (goog.object/get node k)))
-
 (defmacro ->value "Returns value of `node`'s `prop` on every event of type `typ`."
   ([] `(->value "value"))
   ([prop] `(->value "input" ~prop))
   ([typ prop] `(->value dom/node ~typ ~prop))
   ([node typ prop] `(let [node# ~node, typ# ~typ, prop# ~prop]
-                      (events->value (goog-get node# prop#)
-                        (listen node# typ# #(goog-get node# prop#))))))
+                      (events->value (gobj-get node# prop#)
+                        (listen node# typ# #(gobj-get node# prop#))))))
 
 (defmacro a [& body] `(element :a ~@body))
 (defmacro abbr [& body] `(element :abbr ~@body))

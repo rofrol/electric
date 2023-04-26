@@ -12,6 +12,7 @@
    `user.demo-chat-extended/ChatExtended
    `user.demo-webview/Webview
    `user.demo-todos-simple/TodoList
+   `user.demo-todos-advanced/AdvancedTodoList
    `user.demo-todomvc/TodoMVC
    `user.demo-todomvc-composed/TodoMVC-composed
    `user.demo-explorer/DirectoryExplorer
@@ -30,6 +31,7 @@
 
 (def secret-pages
   [;`user.demo-10k-dom/Dom-10k-Elements
+   `wip.crud-controls/CrudControls
    `wip.tag-picker/TagPicker
    `wip.demo-custom-types/CustomTypes
    `wip.tracing/TracingDemo

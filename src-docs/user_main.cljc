@@ -20,6 +20,7 @@
             user.demo-10k-dom
             user.demo-svg
             user.demo-todos-simple
+            user.demo-todos-advanced
             user.tutorial-7guis-1-counter
             user.tutorial-7guis-2-temperature
             user.tutorial-7guis-4-timer
@@ -28,6 +29,7 @@
             user.demo-color
             user.demo-tic-tac-toe
             user.tutorial-blinker
+            wip.crud-controls
             wip.tag-picker
             wip.demo-custom-types
             wip.tracing
@@ -62,6 +64,7 @@
       `user.demo-chat-extended/ChatExtended user.demo-chat-extended/ChatExtended
       `user.demo-webview/Webview user.demo-webview/Webview
       `user.demo-todos-simple/TodoList user.demo-todos-simple/TodoList ; css fixes
+      `user.demo-todos-advanced/AdvancedTodoList user.demo-todos-advanced/AdvancedTodoList
       `user.demo-todomvc/TodoMVC user.demo-todomvc/TodoMVC
       `user.demo-todomvc-composed/TodoMVC-composed user.demo-todomvc-composed/TodoMVC-composed
       `user.demo-color/Color user.demo-color/Color
@@ -74,6 +77,7 @@
       `user.demo-svg/SVG user.demo-svg/SVG
       `user.tutorial-blinker/Blinker user.tutorial-blinker/Blinker
       `wip.tracing/TracingDemo wip.tracing/TracingDemo
+      `wip.crud-controls/CrudControls wip.crud-controls/CrudControls
       ;`user.demo-reagent-interop/ReagentInterop (when react-available user.demo-reagent-interop/ReagentInterop)
       ;::demos/dennis-exception-leak wip.dennis-exception-leak/App2
       ;`wip.demo-stage-ui4/CrudForm wip.demo-stage-ui4/CrudForm

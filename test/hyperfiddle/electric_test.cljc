@@ -8,7 +8,8 @@
             [hyperfiddle.rcf :as rcf :refer [tests tap % with]]
             [missionary.core :as m]
             [clojure.test :as t]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [contrib.debug :as dbg])
   (:import missionary.Cancelled
            [hyperfiddle.electric Pending Failure]
            #?(:clj [clojure.lang ExceptionInfo])))
@@ -2016,17 +2017,17 @@
                                       "caught" nil
                                       #_else (throw e))))))
                          (catch #?(:clj Throwable :cljs :default) e [(type e) (ex-message e)]))))
-    #_init             % := {}
-    (@! 0),            % := {0 :pending}
-    (@! 1),            % := {0 :pending, 1 :pending}
-    (!! 1 nil),        % := {0 :pending}
-    (!! 0 false),      % := {}
-    (@! 2),            % := {2 :pending}
-    (!! 2 :caught),    % := {}
-    (@! 99),           % := {99 :pending}
+    #_init             % := []
+    (@! 0),            % := [:pending]
+    (@! 1),            % := [:pending :pending]
+    (!! 1 nil),        % := [:pending nil], % := [:pending]
+    (!! 0 false),      % := [nil], % := []
+    (@! 2),            % := [:pending]
+    (!! 2 :caught),    % := [nil], % := []
+    (@! 99),           % := [:pending]
     (!! 99 :uncaught), % := [ExceptionInfo "uncaught"]
-    (!! 99 :alive),    % := {99 :alive}
-    (!! 99 nil),       % := {}
+    (!! 99 :alive),    % := [:alive]
+    (!! 99 nil),       % := [nil], % := []
 
     (tap ::done), % := ::done, (println " ok")))
 
@@ -2057,3 +2058,69 @@
     (!! 2 :ex),   % := [:ex-handler ExceptionInfo 2], % := [:busy false], % := :ret
 
     (tap ::done), % := ::done, (println " ok")))
+
+(tests "snapshot"
+  (def flow (p/-snapshot (m/observe (fn [!] (def ! !) #()))))
+  "1 2 -> 1"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (! 1),         % := :notified, @it := 1
+  (! 2)
+  (it),           % := :terminated
+  "Pending 1 2 -> Pending 1"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (! r/pending), % := :notified, @it := r/pending
+  (! 1),         % := :notified, @it := 1
+  (! 2)
+  (it),           % := :terminated
+  "Pending Pending 1 2 -> Pending Pending 1"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (! r/pending), % := :notified, @it := r/pending
+  (! r/pending), % := :notified, @it := r/pending
+  (! 1),         % := :notified, @it := 1
+  (! 2)
+  (it),           % := :terminated
+  "ex-info 1 2 -> ex-info"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (def boom (Failure. (ex-info "boom" {})))
+  (! boom),      % := :notified, @it := boom
+  (! 1)
+  (! 2)
+  (it),           % := :terminated
+  "1 Pending 2 -> 1"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (! 1),         % := :notified, @it := 1
+  (! r/pending)
+  (! 2)
+  (it),           % := :terminated
+  "Pending ex-info 1 -> Pending ex-info"
+  (def it (flow #(tap :notified) #(tap :terminated)))
+  (def boom (Failure. (ex-info "boom" {})))
+  (! r/pending), % := :notified, @it := r/pending
+  (! boom),      % := :notified, @it := boom
+  (! 1)
+  (it),           % := :terminated
+
+  (tap ::done), % := ::done, (println " ok")
+  )
+
+(p/defn MountCancel [tap x]
+  (tap [:mount x])
+  (p/on-cancel #(tap [:cancel x])))
+
+(tests "current mount and cancel order (could mount order be defined and cancel order be flipped?)"
+  (with (p/run (MountCancel. tap :x) (MountCancel. tap :y)))
+  % := [:mount :x]
+  % := [:mount :y]
+  % := [:cancel :x]
+  % := [:cancel :y])
+
+(tests
+  (def !x (atom 0))
+  (with (p/run
+          (case (p/watch !x)
+            0 (MountCancel. tap 0)
+            1 (MountCancel. tap 1)))
+    % := [:mount 0]
+    (reset! !x 1)
+    % := [:mount 1]
+    % := [:cancel 0]))

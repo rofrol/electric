@@ -4,7 +4,9 @@
   (:require [contrib.str]
             [clojure.edn]
             [hyperfiddle.electric-dom2 :as dom]
-            [hyperfiddle.electric :as e]))
+            [hyperfiddle.electric :as e]
+            [missionary.core :as m]
+            [contrib.debug :as dbg]))
 
 (defmacro always [& body]
   (let [self (gensym)]
@@ -30,19 +32,41 @@
      (dom/props {:aria-busy e/busy, :style {:background-color (when e/busy "#fcb467")}})
      ~@body))
 
+#_(defmacro after
+  ([ms form] `(case (new (e/task->cp (m/sleep ~ms))) ~form))
+  ([ms pending form] `(case (new (e/task->cp (m/sleep ~ms ::done) ~pending)) ::done ~form nil)))
+
+(defmacro keep-for [ms & body] `(when (new (e/task->cp (m/sleep ~ms false) true)) ~@body))
+
+(defmacro click [V!]
+  `(let [!state# (atom [::idle])]
+     (e/for-event [e# (dom/listen "click")]
+       (try (let [ret# (new ~V! e#)]
+              (case ret# (do (reset! !state# [::ok ret#]) false)))
+            (catch hyperfiddle.electric.Pending _ (reset! !state# [::pending]) true)
+            (catch missionary.Cancelled _)
+            (catch :default ex# (reset! !state# [::failed ex#]) false)))
+     (e/watch !state#)))
+
 (defmacro button [V! & body]
   `(dom/button
-     (each (dom/listen "click") ~V!
-       (dom/props {:disabled e/busy})
-       ~@body)))
+     (let [ret# (do ~@body)
+           [state# v#] (click (e/fn [v#] (dom/props {:disabled true, :aria-busy true}) (new ~V! v#)))]
+       (case state#
+         ::idle    nil
+         ::pending (dom/>>style :background-color "yellow")
+         ::ok      (keep-for 1000 (dom/>>style :border-color "green"))
+         ;; TODO tooltip v# on hover or something smarter than `prn`
+         ::failed  (do (prn ::button :err v#) (keep-for 1000 (dom/>>style :border-color "red"))))
+       ret#)))
 
-(defn ?read-value! [e node]
+(defn ?read-line! [e node]
   (when (and (= "Enter" (.-key e)) (contrib.str/blank->nil (.-value node)))
     (let [txt (.-value node)] (set! (.-value node) "") txt)))
 
-(defmacro enter [V! & body]
-  `(dom/input
-     (each (dom/listen dom/node "keydown" #(?read-value! % dom/node)) ~V!
+(defmacro enter [input V! & body]
+  `(let [inp# ~input]
+     (each (dom/listen inp# "keydown" #(?read-line! % inp#)) ~V!
        ~@body)))
 
 (defmacro checkbox [v V! & body]
