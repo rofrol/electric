@@ -36,17 +36,18 @@
   ([ms form] `(case (new (e/task->cp (m/sleep ~ms))) ~form))
   ([ms pending form] `(case (new (e/task->cp (m/sleep ~ms ::done) ~pending)) ::done ~form nil)))
 
-(defmacro keep-for [ms & body] `(when (new (e/task->cp (m/sleep ~ms false) true)) ~@body))
+(defmacro keep-for
+  ([ms form] `(when (new (e/task->cp (m/sleep ~ms false) true)) ~form))
+  ([ms then form] `(case (new (e/task->cp (m/sleep ~ms ::done) ::wait)) ::wait ~form ::done ~then)))
 
 (defmacro click [V!]
-  `(let [!state# (atom [::idle])]
-     (e/for-event [e# (dom/listen "click")]
-       (try (let [ret# (new ~V! e#)]
-              (case ret# (do (reset! !state# [::ok ret#]) false)))
-            (catch hyperfiddle.electric.Pending _ (reset! !state# [::pending]) true)
-            (catch missionary.Cancelled _)
-            (catch :default ex# (reset! !state# [::failed ex#]) false)))
-     (e/watch !state#)))
+  `(let [!state# (atom [::idle]), state# (e/watch !state#)
+         pending# (e/for-event [checked?# (dom/listen "click")]
+                    (try (let [ret# (new ~V! checked?#)] (case ret# (do (reset! !state# [::ok ret#]) false)))
+                         (catch hyperfiddle.electric.Pending _ true)
+                         (catch missionary.Cancelled _)
+                         (catch :default ex# (reset! !state# [::failed ex#]) false)))]
+     (if (seq pending#) [::pending] state#)))
 
 (defmacro button [V! & body]
   `(dom/button
@@ -69,16 +70,29 @@
      (each (dom/listen inp# "keydown" #(?read-line! % inp#)) ~V!
        ~@body)))
 
+(defmacro tick [V!]
+  `(let [!state# (atom [::init]), state# (e/watch !state#)
+         pending# (e/for-event [checked?# (dom/listen dom/node "change" (always (-> dom/node .-checked)))]
+                    (try (let [ret# (new ~V! checked?#)] (case ret# (do (reset! !state# [::ok ret#]) false)))
+                         (catch hyperfiddle.electric.Pending _ true)
+                         (catch missionary.Cancelled _)
+                         (catch :default ex# (reset! !state# [::failed ex#]) false)))]
+     (if (seq pending#) [::pending] (e/watch !state#))))
+
 (defmacro checkbox [v V! & body]
   `(dom/input (dom/props {:type "checkbox"})
-     ~(if V!
-        `(each (dom/listen dom/node "change" (always (-> dom/node .-checked))) ~V!
-           ;; we don't check for focus on purpose
-           ;; tested in FF, a ticking with the mouse focuses the node
-           ;; in case tx fails we want to revert to value, even if focused
-           ~(when v `(when-not e/busy (set! (.-checked dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-checked dom/node) ~v) ~@body))))
+     (let [cv# ~v, V# ~V!, ret# (do ~@body), [status# v#] (tick V#)]
+       ;; we don't check for focus on purpose
+       ;; tested in FF, a ticking with the mouse focuses the node
+       ;; in case tx fails we want to revert to value, even if focused
+       (case status# ::pending nil (set! (.-checked dom/node) cv#))
+       (let [border# (case status#
+                       ::ok     (keep-for 1000 nil "3px solid green")
+                       ::failed (keep-for 1000 nil "3px solid red")
+                       nil)]
+         (dom/props {:aria-busy (= ::pending status#), :style {:outline border#}}))
+       (case status# ::failed (prn ::checkbox :err v#) nil)
+       ret#)))
 
 (defmacro input [v V! & body]
   `(dom/input

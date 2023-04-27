@@ -28,7 +28,9 @@
                 #_(e/offload #(tx! [{:db/id id :task/status (if checked? :done :active)}]))
                 ;; the fix is to `e/snapshot` the transaction function
                 ;; subsequent `Pending`s and values are not observed anymore, ensuring run-once
-                (e/offload (e/snapshot #(tx! [{:db/id id :task/status (if checked? :done :active)}])))
+                (if (zero? (rand-int 2))
+                  (throw (ex-info "HA!" {}))
+                  (e/offload (e/snapshot #(tx! [{:db/id id :task/status (if checked? :done :active)}]))))
                 nil))
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
