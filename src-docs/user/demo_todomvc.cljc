@@ -76,15 +76,16 @@
             (dom/span (dom/props {:class "input-load-mask"})
               (dom/props
                 {:aria-busy
-                 (crud/enter (e/fn [desc]
-                               (case (e/server (transact! [{:db/id id, :task/description desc}]) nil)
-                                 (swap! !state assoc ::editing nil)))
-                   (dom/props {:class "edit"})
-                   (dom/on! "keydown" #(case (.-key %) "Escape" (swap! !state dissoc ::editing) nil))
-                   (when-not e/busy (set! (.-value dom/node) description))
-                   (case description ; HACK sequence - run focus after description is available
-                     (.focus dom/node))
-                   e/busy)})))
+                 (dom/input
+                   (crud/enter dom/node (e/fn [desc]
+                                          (case (e/server (transact! [{:db/id id, :task/description desc}]) nil)
+                                            (swap! !state assoc ::editing nil)))
+                     (dom/props {:class "edit"})
+                     (dom/on! "keydown" #(case (.-key %) "Escape" (swap! !state dissoc ::editing) nil))
+                     (when-not e/busy (set! (.-value dom/node) description))
+                     (case description ; HACK sequence - run focus after description is available
+                       (.focus dom/node))
+                     e/busy))})))
           (crud/button (e/fn [_] (e/server (transact! [[:db/retractEntity id]]) nil))
             (dom/props {:class "destroy"})))))))
 
@@ -114,10 +115,11 @@
   (dom/span (dom/props {:class "input-load-mask"})
     (dom/props
       {:aria-busy
-       (crud/enter (e/fn [description]
-                     (e/server (transact! [{:task/description description, :task/status :active}]) nil))
-         (dom/props {:class "new-todo", :placeholder "What needs to be done?"})
-         e/busy)})))
+       (dom/input
+         (crud/enter dom/node (e/fn [description]
+                                (e/server (transact! [{:task/description description, :task/status :active}]) nil))
+           (dom/props {:class "new-todo", :placeholder "What needs to be done?"})
+           e/busy))})))
 
 (e/defn TodoMVC-UI [state]
   (dom/section (dom/props {:class "todoapp"})
