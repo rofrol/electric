@@ -238,14 +238,13 @@
   ([typ]   `(new Event ~typ false))
   ([typ F] `(on node ~typ ~F))
   ([node typ F] `(binding [node ~node]
-                   ;; checking types is not enough, one could return an exception without throwing
-                   (let [[state# v#] (e/with-cycle [x# [::init nil]]
-                                       (if-some [evt# (new Event ~typ (= (first x#) ::pending))]
-                                         (try [::ok (new ~F evt#)]
-                                              (catch Pending  e# [::pending e#])
-                                              (catch :default e# [::err e#]))
-                                         x#))]
-                     (case state# (::init ::ok) v#, (::err ::pending) (throw v#))))))
+                   (let [!last# (atom [::ok]) , [status# v#] (e/watch !last#)]
+                        (e/for-event [e# (listen ~typ)]
+                          (try (reset! !last# [::ok (new ~F e#)]) false
+                               (catch hyperfiddle.electric.Pending ex# (reset! !last# [::ex ex#]) true)
+                               (catch missionary.Cancelled ex# false)
+                               (catch :default ex# (reset! !last# [::ex ex#]) false)))
+                        (case status# ::ok v# ::ex (throw v#))))))
 
 #?(:cljs (e/def visibility-state "'hidden' | 'visible'"
            (new (->> (event* js/document "visibilitychange" identity {}) 

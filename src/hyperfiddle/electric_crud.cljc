@@ -100,6 +100,8 @@
         (catch hyperfiddle.electric.Pending _ true)
         (catch ~(if (:env &env) :default 'Throwable) _ false)))
 
+;; TODO is this better?
+;; (depend [v#] .-value dom/node)
 (defmacro depend [deps form]
   (if (list? form)
     (let [args (vec (repeatedly (+ (dec (count form)) (count deps)) gensym))]
