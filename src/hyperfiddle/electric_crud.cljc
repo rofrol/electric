@@ -66,10 +66,14 @@
   (when (and (= "Enter" (.-key e)) (contrib.str/blank->nil (.-value node)))
     (let [txt (.-value node)] (set! (.-value node) "") txt)))
 
-(defmacro enter [input V! & body]
-  `(let [inp# ~input]
-     (each (dom/listen inp# "keydown" #(?read-line! % inp#)) ~V!
-       ~@body)))
+(defmacro enter
+  ([V!]       `(enter dom/node ~V!))
+  ([input V!] `(let [inp#  ~input
+                     busy# (seq (e/for-event [line# (dom/listen inp# "keydown" #(?read-line! % inp#))]
+                                  (try (new ~V! line#) false
+                                       (catch hyperfiddle.electric.Pending ex# true))))]
+                 (dom/props {:aria-busy busy#, :style {:background-color (when busy# "#fcb467")}})
+                 (and busy# (throw (hyperfiddle.electric.Pending.))))))
 
 (defmacro tick [V!]
   `(let [!state# (atom [::init]), state# (e/watch !state#)

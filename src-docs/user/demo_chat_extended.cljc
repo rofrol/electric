@@ -28,9 +28,8 @@
           (dom/li (dom/strong (dom/text username))
             (dom/text " " msg))))))
 
-  (dom/input
-    (crud/enter dom/node (e/fn [v] (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %)))))
-      (dom/props {:placeholder "Type a message"}))))
+  (dom/input (dom/props {:placeholder "Type a message"})
+    (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons {::username username ::msg v} (take 9 %))))))))
 
 (e/defn ChatExtended []
   (e/client

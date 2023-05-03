@@ -48,9 +48,8 @@
         (dom/h1 (dom/text "minimal todo list"))
         (dom/p (dom/text "it's multiplayer, try two tabs"))
         (dom/div (dom/props {:class "todo-list"})
-          (dom/input
-            (crud/enter dom/node (e/fn [v] (e/server (e/offload #(d/transact! !conn [{:task/description v :task/status :active}])) nil))
-              (dom/props {:placeholder "Buy milk"})))
+          (dom/input (dom/props {:placeholder "Buy milk"})
+            (crud/enter (e/fn [v] (e/server (e/offload #(d/transact! !conn [{:task/description v :task/status :active}])) nil))))
           (dom/div {:class "todo-items"}
             (e/server
               (e/for-by :db/id [{:keys [db/id]} (e/offload #(todo-records db))]

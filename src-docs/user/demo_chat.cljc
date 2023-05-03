@@ -19,9 +19,8 @@
             (e/client
               (dom/li (dom/style {:visibility (if (nil? msg) "hidden" "visible")})
                 (dom/text msg))))))
-      (dom/input
-        (crud/enter dom/node (e/fn [v] (e/server (swap! !msgs #(cons v (take 9 %)))))
-          (dom/props {:placeholder "Type a message"})))
+      (dom/input (dom/props {:placeholder "Type a message"})
+        (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons v (take 9 %)))))))
       (catch Pending e
         (dom/style {:background-color "yellow"})))))
 
