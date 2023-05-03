@@ -445,31 +445,3 @@ running on a remote host.
      (new (m/reductions {} nil (m/eduction (map #(mbx# [:assoc (->unique) %])) ~>flow)))
      (for-by first [[k# ~sym] (new (->map mbx#))]
        (let [v# (do ~@body)] (if v# v# (do (mbx# [:dissoc k#]) nil))))))
-
-(hyperfiddle.electric/def EventExceptionHandler "Default error handler for `each-event`.
-
-Prints the reactive exception and returns `nil`."
-  (hyperfiddle.electric/fn [ex v]
-    (println "an exception was raised when handling event" v)
-    (print-client-exception ex)
-    (new ?PrintServerException (dbg/ex-id hyperfiddle.electric/trace))))
-
-(hyperfiddle.electric/def busy "`true` while any `each-event` callbacks are running.")
-
-(defmacro each-event "Runs `V!` for each value of missionary `discrete-flow` and `body` in context of `busy`.
-
-  `V!` is unmounted once it doesn't throw `Pending`.
-  `body` has access to `busy`, which is true when any callbacks are running.
-  Uncaught exceptions are by default printed with a reactive stack trace.
-  One can override exception handling by binding `EventExceptionHandler`.
-  Returns result of `body` or throws `Pending` when any callbacks are running.
-  This is a high-level wrapper of `for-event` with sane defaults."
-  [>flow V! & body]
-  `(binding [busy (-> (for-event [v# ~>flow]
-                        (try (new ~V! v#)                            false
-                             (catch hyperfiddle.electric.Pending ex# true)
-                             (catch missionary.Cancelled ex#         false)
-                             (catch :default ex#                     (new EventExceptionHandler ex# v#))))
-                    seq boolean)]
-     (when busy (throw (hyperfiddle.electric.Pending.)))
-     ~@body))
