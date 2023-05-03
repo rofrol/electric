@@ -17,6 +17,8 @@
        ([a# b#] (~self))
        ([a# b# & more#] (~self)))))
 
+(defmacro do1 [x & body] `(let [ret# ~x] ~@body ret#))
+
 (defn parse-edn [s] (try (some-> s contrib.str/blank->nil clojure.edn/read-string) (catch #?(:clj Throwable :cljs :default) _)))
 (defn keep-if [pred v] (when (pred v) v))
 (defn parse-keyword [s] (keep-if keyword? (parse-edn s)))
@@ -28,14 +30,14 @@
   (try #?(:clj (java.time.LocalDateTime/parse s) :cljs (js/Date. s))
        (catch #?(:clj Throwable :cljs :default) _)))
 
-(defmacro each [flow V! & body]
-  `(e/each-event ~flow ~V!
-     (dom/props {:aria-busy e/busy, :style {:background-color (when e/busy "#fcb467")}})
-     ~@body))
+(defmacro pending? [v]
+  `(try ~v false
+        (catch hyperfiddle.electric.Pending _ true)
+        (catch ~(if (:env &env) :default 'Throwable) _ false)))
 
 #_(defmacro after
-  ([ms form] `(case (new (e/task->cp (m/sleep ~ms))) ~form))
-  ([ms pending form] `(case (new (e/task->cp (m/sleep ~ms ::done) ~pending)) ::done ~form nil)))
+    ([ms form] `(case (new (e/task->cp (m/sleep ~ms))) ~form))
+    ([ms pending form] `(case (new (e/task->cp (m/sleep ~ms ::done) ~pending)) ::done ~form nil)))
 
 (defmacro keep-for
   ([ms form] `(when (new (e/task->cp (m/sleep ~ms false) true)) ~form))
@@ -82,7 +84,7 @@
                          (catch hyperfiddle.electric.Pending _ true)
                          (catch missionary.Cancelled _)
                          (catch :default ex# (reset! !state# [::failed ex#]) false)))]
-     (if (seq pending#) [::pending] (e/watch !state#))))
+     (if (seq pending#) [::pending] state#)))
 
 (defmacro checkbox [v V! & body]
   `(dom/input (dom/props {:type "checkbox"})
@@ -99,151 +101,118 @@
        (case status# ::failed (prn ::checkbox :err v#) nil)
        ret#)))
 
-(defmacro pending? [v]
-  `(try ~v false
-        (catch hyperfiddle.electric.Pending _ true)
-        (catch ~(if (:env &env) :default 'Throwable) _ false)))
-
 ;; TODO is this better?
 ;; (depend [v#] .-value dom/node)
 (defmacro depend [deps form]
-  (if (list? form)
-    (let [args (vec (repeatedly (+ (dec (count form)) (count deps)) gensym))]
-      `((fn ~args (~(first form) ~@(take (dec (count form)) args)))
-        ~@(rest form) ~@deps))
-    (let [args (vec (repeatedly (count deps) gensym))]
-      `((fn ~args ~form) ~@deps))))
+  (let [args (vec (repeatedly (+ (dec (count form)) (count deps)) gensym))]
+    `((fn ~args (~(first form) ~@(take (dec (count form)) args)))
+      ~@(rest form) ~@deps)))
 
-(defmacro type [v V!]
-  `(let [v# ~v, v-pending?# (pending? v#)
-         id# (random-uuid)
-         !state# (atom [::init]), state# (e/watch !state#)
-         pending# (e/for-event [text# (dom/listen dom/node "input" (always (-> dom/node .-value)))]
-                    (try (let [ret# (new ~V! text#)] (case ret# (do (reset! !state# [::ok ret#]) false)))
-                         (catch hyperfiddle.electric.Pending _ true)
-                         (catch missionary.Cancelled _)
-                         (catch :default ex# (reset! !state# [::err ex#]) false)))]
-     (cond (or (seq pending#) v-pending?#) [::pending]
+(defmacro type
+  ([v V!] `(type ~v ~V! (always (-> dom/node .-value))))
+  ([v V! keep-fn]
+   `(let [v# ~v, v-pending?# (pending? v#)
+          !state# (atom [::init]), state# (e/watch !state#)
+          pending# (e/for-event [text# (dom/listen dom/node "input" ~keep-fn)]
+                     (try (let [ret# (new ~V! text#)] (case ret# (do (reset! !state# [::ok ret#]) false)))
+                          (catch hyperfiddle.electric.Pending _ true)
+                          (catch missionary.Cancelled _)
+                          (catch :default ex# (reset! !state# [::err ex#]) false)))]
+      (cond (or (seq pending#) v-pending?#) [::pending]
 
-           (and (#{::init ::ok} (first state#)) (not v-pending?#))
-           (if (dom/focused?)
-             (if (= (str v#) (depend [v#] (.-value dom/node)))  [::synced v#]  [::pending])
-             (do (set! (.-value dom/node) v#) [::synced v#]))
+            (and (#{::init ::ok} (first state#)) (not v-pending?#))
+            (if (dom/focused?)
+              (if (= (str v#) (depend [v#] (.-value dom/node)))  [::synced v#]  [::pending])
+              (do (set! (.-value dom/node) v#) [::synced v#]))
 
-           (= ::err (first state#)) [::desynced (second state#)]
+            (= ::err (first state#)) [::desynced (second state#)]
 
-           (= ::ok (first state#)) [::synced (second state#)]
+            (= ::ok (first state#)) [::synced (second state#)]
 
-           :else [::pending])))
+            :else [::pending]))))
 
-#_(defmacro input [v V! & body]
-  `(dom/input
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+(e/defn Dot [status]
+  (svg/svg (dom/props {:viewBox "0 0 10 10", :style {:width "10px", :height "10px", :order 1, :margin-left "5px"}})
+         (svg/circle (dom/props {:cx 5 :cy 5 :r 3
+                                 :fill (case status ::synced "green" ::pending "yellow" ::desynced "red")}))))
 
-#_(defmacro input [v V! & body]
-  `(dom/input
-     (let [cv# ~v, V# ~V!, ret# (do ~@body), [status# v#] (type V#)]
-       (when-not (or (= ::pending status#) (dom/focused?))  (set! (.-value dom/node) cv#))
-       (dom/style {:background-color (case status#
-                                       ::pending "yellow"
-                                       ::failed  "red"
-                                       #_else    nil)})
-       (case (dbg/dbg status#) ::failed (prn ::input :err v#) nil)
-       ret#)))
+(e/defn WithDot [Writer]
+  (dom/div (dom/style {:display "flex", :align-items "center"})
+     (let [!state (atom [::pending]), [status v] (e/watch !state)]
+       (new Dot status)
+       (case status ::desynced (throw v) nil)
+       (new Writer !state status v))))
 
 (defmacro input [v V! & body]
-  `(dom/div (dom/style {:display "flex", :align-items "center"})
-     (let [!state# (atom [::pending]), [status# v#] (e/watch !state#)]
-       (svg/svg (dom/props {:viewBox "0 0 10 10", :style {:width "10px", :height "10px", :order 1, :margin-left "5px"}})
-         (svg/circle (dom/props {:cx 5 :cy 5 :r 3
-                                 :fill (case status# ::synced "green" ::pending "yellow" ::desynced "red")})))
-       (dom/input
-         (let [ret# (do ~@body)]
-           (reset! !state# (type ~v ~V!))
-           (case status# ::desynced (prn ::input :err v#) nil)
-           ret#)))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (do1 (do ~@body) (reset! !state# (type ~v ~V!)))))))
 
 (defmacro textarea [v V! & body]
-  `(dom/textarea
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/textarea (do1 (do ~@body) (reset! !state# (type ~v ~V!)))))))
 
 (defmacro edn [v V! & body]
-  `(dom/textarea
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-edn))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) (contrib.str/pprint-str ~v))))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/textarea
+         (do1 (do ~@body)
+           (reset! !state# (type (contrib.str/pprint-str ~v) ~V! (always (-> dom/node .-value parse-edn)))))))))
 
 (def uuid-pattern "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 (defmacro uuid [v V! & body]
-  `(dom/input (dom/props {:type "text" :pattern uuid-pattern})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-uuid))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "text", :pattern uuid-pattern})
+         (do1 (do ~@body)
+           (reset! !state# (type ~v ~V! (always (-> dom/node .-value parse-uuid)))))))))
 
 (defmacro long [v V! & body]
-  `(dom/input (dom/props {:type "number"})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-long))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "number"})
+         (do1 (do ~@body)
+           (reset! !state# (type ~v ~V! (always (-> dom/node .-value parse-long)))))))))
 
 (defmacro range [v V! & body]
-  `(dom/input (dom/props {:type "range"})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-long))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "range"})
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-long)))))))))
 
 (defmacro double [v V! & body]
-  `(dom/input (dom/props {:type "number"})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-double))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "number"})
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-double)))))))))
 
 (defmacro keyword [v V! & body]
-  `(dom/input
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-keyword))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-keyword)))))))))
 
 (defmacro symbol [v V! & body]
-  `(dom/input
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-symbol))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-symbol)))))))))
 
 (defmacro date [v V! & body]
-  `(dom/input (dom/props {:type "date"})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-date))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "date"})
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-date)))))))))
 
 (defmacro datetime-local [v V! & body]
-  `(dom/input (dom/props {:type "datetime-local"})
-     ~(if V!
-        `(each (dom/listen dom/node "input" (always (-> dom/node .-value parse-datetime-local))) ~V!
-           ~(when v `(when-not (or e/busy (dom/focused?)) (set! (.-value dom/node) ~v)))
-           ~@body)
-        `(do (set! (.-value dom/node) ~v) ~@body))))
+  `(new WithDot
+     (e/fn [!state# status# v#]
+       (dom/input (dom/props {:type "datetime-local"})
+         (do1 (do ~@body)
+           (reset! !state (type ~v ~V! (always (-> dom/node .-value parse-datetime-local)))))))))
