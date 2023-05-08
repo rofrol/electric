@@ -445,3 +445,19 @@ running on a remote host.
      (new (m/reductions {} nil (m/eduction (map #(mbx# [:assoc (->unique) %])) ~>flow)))
      (for-by first [[k# ~sym] (new (->map mbx#))]
        (let [v# (do ~@body)] (if v# v# (do (mbx# [:dissoc k#]) nil))))))
+
+(defmacro for-event-pending "Runs `body` for each value of missionary `>flow` bound to `sym`.
+
+  `body` is running while it is Pending.
+  Returns one of `[::idle]`, `[::ok value]`, `[::pending]` or `[::failed exception]`.
+
+  Useful to process a discrete event stream (e.g. DOM events) in Electric."
+  [[sym >flow] & body]
+  `(let [mbx# (m/mbx), !state# (atom [::idle]), state# (e/watch !state#)]
+     (new (m/reductions {} nil (m/eduction (map #(mbx# [:assoc (->unique) %])) ~>flow)))
+     (if (seq (for-by first [[k# ~sym] (new (->map mbx#))]
+                (try (case (reset! !state# [::ok (do ~@body)]) (mbx# [:dissoc k#]))
+                     (catch hyperfiddle.electric.Pending ex# ::pending)
+                     (catch missionary.Cancelled ex#)
+                     (catch ~(if (:ns &env) :default `Throwable) ex# (reset! !state# [::failed ex#]) (mbx# [:dissoc k#])))))
+       [::pending] state#)))

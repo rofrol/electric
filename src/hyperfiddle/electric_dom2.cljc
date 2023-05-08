@@ -246,8 +246,21 @@
                                (catch :default ex# (reset! !last# [::ex ex#]) false)))
                         (case status# ::ok v# ::ex (throw v#))))))
 
+;; with for-event-pending
+(defmacro on2
+  "Run the given electric function on event.
+  (on \"click\" (e/fn [event] ...))"
+  ;; TODO add support of event options (see `event*`)
+  ([typ]   `(new Event ~typ false))
+  ([typ F] `(on node ~typ ~F))
+  ([node typ F] `(binding [node ~node]
+                   (let [[state# v#] (e/for-event-pending [e# (listen ~typ)] (new ~F e#))]
+                     (case state#
+                       (::e/idle    ::e/ok)            v#
+                       (::e/pending ::e/failed) (throw v#))))))
+
 #?(:cljs (e/def visibility-state "'hidden' | 'visible'"
-           (new (->> (event* js/document "visibilitychange" identity {}) 
+           (new (->> (event* js/document "visibilitychange" identity {})
                   (m/latest #(.-visibilityState js/document))))))
 
 (defmacro on-pending [pending-body & body] `(try (do ~@body) (catch Pending e# ~pending-body (throw e#))))

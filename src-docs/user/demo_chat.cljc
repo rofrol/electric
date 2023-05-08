@@ -13,14 +13,42 @@
     (try
       (dom/h1 (dom/text "Multiplayer chat app in 30 LOC"))
       (dom/p (dom/text "try two tabs!"))
-      (dom/ul (dom/style {:padding-left "1.5em"})
-        (e/server
-          (e/for-by identity [msg msgs]
-            (e/client
-              (dom/li (dom/style {:visibility (if (nil? msg) "hidden" "visible")})
-                (dom/text msg))))))
-      (dom/input (dom/props {:placeholder "Type a message"})
-        (crud/enter (e/fn [v] (e/server (swap! !msgs #(cons v (take 9 %)))))))
+      (let [!in (atom nil), in (e/watch !in)]
+        (dom/ul (dom/style {:padding-left "1.5em"})
+          (e/server
+            (e/for-by identity [msg msgs]
+              (e/client
+                (dom/li (dom/style {:visibility (if (nil? msg) "hidden" "visible")})
+                  (dom/text msg)))))
+          (crud/enter in (e/fn [v]
+                           (let [!ex (atom false), ex (e/watch !ex)]
+                             (if ex
+                               (dom/li (dom/text "💀 " v)
+                                 (crud/button (e/fn [] (reset! !ex false))
+                                   (dom/text "↻"))
+                                 (prn [(type ex) (ex-message ex)])
+                                 (throw (Pending.)))
+                               (try (e/server (if (zero? (rand-int 2))
+                                                (swap! !msgs #(cons v (take 9 %)))
+                                                (throw (ex-info "bad luck" {}))))
+                                    (catch Pending e (dom/li (dom/text "⌛ " v)) (throw e))
+                                    (catch :default e (reset! !ex e) (throw (Pending.))))))))
+          ;; possible factoring
+          #_(crud/enter in
+            ;; submit
+            (e/fn [v] (e/server (if (zero? (rand-int 2))
+                                  (swap! !msgs #(cons v (take 9 %)))
+                                  (throw (ex-info "bad luck" {})))))
+            ;; pending
+            (e/fn [v] (dom/li (dom/text "⌛ " v)))
+            ;; error
+            (e/fn [v ex retry!]
+              (dom/li (dom/text "💀 " v)
+                (crud/button (e/fn [] (retry!)) (dom/text "↻"))
+                (prn [(type ex) (ex-message ex)]))))
+          )
+        (dom/input (dom/props {:placeholder "Type a message"}) (reset! !in dom/node))
+        nil)
       (catch Pending e
         (dom/style {:background-color "yellow"})))))
 

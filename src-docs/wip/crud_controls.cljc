@@ -12,5 +12,5 @@
 
 (e/defn CrudControls []
   (e/client
-    (crud/button (e/fn [_] (after 200 (when (zero? (rand-int 2)) (throw (ex-info "ZERO!" {})))))
+    (crud/button (e/fn [] (after 200 (when (zero? (rand-int 2)) (throw (ex-info "ZERO!" {})))))
       (dom/text "4 colored button"))))

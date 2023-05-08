@@ -20,6 +20,9 @@
     (dom/div (dom/props {:style {:display "flex", :flex-direction "column"}})
       (let [search (dom/input (dom/props {:type "search", :placeholder "java.home"}) (dom/->value))]
         (e/server
+          ;; carries the affordance
+          ;; closes over the input(s)
+          #_(ui/map->table (e/fn [] (e/offload #(sort-by key (jvm-system-properties search)))))
           (let [system-props (e/offload #(sort-by key (jvm-system-properties search)))
                 matched-count (count system-props)]
             (e/client

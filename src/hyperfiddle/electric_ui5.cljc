@@ -1,6 +1,6 @@
-(ns hyperfiddle.electric-crud
+(ns hyperfiddle.electric-ui5
   (:refer-clojure :exclude [long double keyword symbol uuid range type])
-  #?(:cljs (:require-macros hyperfiddle.electric-crud))
+  #?(:cljs (:require-macros hyperfiddle.electric-ui5))
   (:require [contrib.str]
             [clojure.edn]
             [hyperfiddle.electric-dom2 :as dom]
@@ -48,6 +48,7 @@
      (let [ret# (do ~@body)
            [state# v#] (e/for-event-pending [e# (dom/listen "click")] (new ~V!))
            busy# (= state# ::e/pending)]
+       (prn state# busy#)
        (dom/props {:disabled busy#, :aria-busy busy#})
        (case state#
          ::e/idle    nil
