@@ -18,12 +18,16 @@
   (e/client
     (dom/h1 (dom/text "JVM System Properties search"))
     (dom/div (dom/props {:style {:display "flex", :flex-direction "column"}})
-      (let [search (dom/input (dom/props {:type "search", :placeholder "java.home"}) (dom/->value))]
+      (let [>search (dom/input (dom/props {:type "search", :placeholder "java.home"})
+                      (dom/listen dom/node "input" (fn [_] (.-value dom/node))))]
         (e/server
           ;; carries the affordance
           ;; closes over the input(s)
           #_(ui/map->table (e/fn [] (e/offload #(sort-by key (jvm-system-properties search)))))
-          (let [system-props (e/offload #(sort-by key (jvm-system-properties search)))
+          ;; possibility to add multiple arguments to for-event-pending-switch
+          ;; they'd be colledted with m/latest
+          (let [system-props (e/for-event-pending-switch [search >search]
+                               (e/offload #(sort-by key (jvm-system-properties search))))
                 matched-count (count system-props)]
             (e/client
               (dom/table

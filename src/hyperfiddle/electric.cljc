@@ -461,3 +461,34 @@ running on a remote host.
                      (catch missionary.Cancelled ex#)
                      (catch ~(if (:ns &env) :default `Throwable) ex# (reset! !state# [::failed ex#]) (mbx# [:dissoc k#])))))
        [::pending] state#)))
+
+(defmacro for-event-pending-2 [bind & body]
+  `(let [!state# (atom [::idle]), state# (e/watch !state#)]
+     (if (seq (for-event ~bind
+                (try (reset! !state# [::ok (do ~@body)]) false
+                     (catch hyperfiddle.electric.Pending ex# true)
+                     (catch missionary.Cancelled ex# false)
+                     (catch ~(if (:ns &env) :default `Throwable) ex# (reset! !state# [::failed ex#]) false))))
+       [::pending] state#)))
+
+(defmacro for-event-pending-switch [[sym >flow] & body]
+  `(let [!latest# (atom nil), latest# (e/watch !latest)]
+     (e/for-event-pending [~sym (m/eduction (map #(reset! !latest# %)) ~>flow)]
+       (when (= latest# e#) ~@body))))
+
+;; (for1 [e (dom/listen "click")]
+;;   ...)
+(defmacro for-one-event [[sym >flow] & body]
+  `(let [!e# (atom nil)]
+     (if-some [~sym (e/watch !e#)]
+       (if-let [v# (do ~@body)] v# (reset! !e# nil))
+       (->> ~>flow (m/reductions #(reset! !e# %2) nil) new))))
+
+(defmacro for-one-event-pending [bind & body]
+  `(let [!state# (atom [::idle])]
+     (for-one-event ~bind
+       (try (reset! !state# [::ok (do ~@body)]) false
+            (catch hyperfiddle.electric.Pending ex# (reset! !state# [::pending]) true)
+            (catch missionary.Cancelled ex# false)
+            (catch ~(if (:ns &env) :default `Throwable) ex# (reset! !state# [::failed ex#]) false)))
+     (e/watch !state#)))

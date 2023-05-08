@@ -247,16 +247,27 @@
                         (case status# ::ok v# ::ex (throw v#))))))
 
 ;; with for-event-pending
+;; this changes `on`, it used to supersede the event but this impl runs them concurrently
 (defmacro on2
   "Run the given electric function on event.
   (on \"click\" (e/fn [event] ...))"
   ;; TODO add support of event options (see `event*`)
   ([typ]   `(new Event ~typ false))
-  ([typ F] `(on node ~typ ~F))
+  ([typ F] `(on2 node ~typ ~F))
   ([node typ F] `(binding [node ~node]
                    (let [[state# v#] (e/for-event-pending [e# (listen ~typ)] (new ~F e#))]
                      (case state#
                        (::e/idle    ::e/ok)            v#
+                       (::e/pending ::e/failed) (throw v#))))))
+
+;; `for-event-pending-switch` version with switch-and-cancel
+(defmacro on3
+  ([typ]   `(new Event ~typ false))
+  ([typ F] `(on3 node ~typ ~F))
+  ([node typ F] `(binding [node ~node]
+                   (let [[state# v#] (e/for-event-pending-switch [e# (listen ~typ)] (new ~F e#))]
+                     (case state#
+                       (::e/idle ::e/ok) v# ; could be `nil`, for backward compat we keep it
                        (::e/pending ::e/failed) (throw v#))))))
 
 #?(:cljs (e/def visibility-state "'hidden' | 'visible'"
