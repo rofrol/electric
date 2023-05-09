@@ -446,7 +446,7 @@ running on a remote host.
      (for-by first [[k# ~sym] (new (->map mbx#))]
        (let [v# (do ~@body)] (if v# v# (do (mbx# [:dissoc k#]) nil))))))
 
-(defmacro for-event-pending "Runs `body` for each value of missionary `>flow` bound to `sym`.
+(defmacro for-event-pending-old "Runs `body` for each value of missionary `>flow` bound to `sym`.
 
   `body` is running while it is Pending.
   Returns one of `[::idle]`, `[::ok value]`, `[::pending]` or `[::failed exception]`.
@@ -462,7 +462,7 @@ running on a remote host.
                      (catch ~(if (:ns &env) :default `Throwable) ex# (reset! !state# [::failed ex#]) (mbx# [:dissoc k#])))))
        [::pending] state#)))
 
-(defmacro for-event-pending-2 [bind & body]
+(defmacro for-event-pending [bind & body]
   `(let [!state# (atom [::idle]), state# (e/watch !state#)]
      (if (seq (for-event ~bind
                 (try (reset! !state# [::ok (do ~@body)]) false
@@ -480,9 +480,9 @@ running on a remote host.
 ;;   ...)
 (defmacro for-one-event [[sym >flow] & body]
   `(let [!e# (atom nil)]
-     (if-some [~sym (e/watch !e#)]
-       (if-let [v# (do ~@body)] v# (reset! !e# nil))
-       (->> ~>flow (m/reductions #(reset! !e# %2) nil) new))))
+     (->> ~>flow (m/reductions #(swap! !e# (fn [cur#] (if (nil? cur#) %2 cur#))) nil) new)
+     (when-some [~sym (e/watch !e#)]
+       (if-let [v# (do ~@body)] v# (reset! !e# nil)))))
 
 (defmacro for-one-event-pending [bind & body]
   `(let [!state# (atom [::idle])]
