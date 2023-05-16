@@ -12,6 +12,7 @@
    `user.demo-chat-extended/ChatExtended
    `user.demo-webview/Webview
    `user.demo-todos-simple/TodoList
+   `user.demo-todos-advanced/AdvancedTodoList
    `user.demo-todomvc/TodoMVC
    `user.demo-todomvc-composed/TodoMVC-composed
    `user.demo-explorer/DirectoryExplorer

@@ -13,13 +13,9 @@
           status (:task/status e)]
       (e/client
         (dom/div
-          (ui/checkbox
-            (case status :active false, :done true)
+          (ui/checkbox (= :done status)
             (e/fn [v]
-              (e/server
-                (e/discard
-                  (d/transact! !conn [{:db/id id
-                                       :task/status (if v :done :active)}]))))
+              (e/server (d/transact! !conn [{:db/id id :task/status (if v :done :active)}]) nil))
             (dom/props {:id id}))
           (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
 

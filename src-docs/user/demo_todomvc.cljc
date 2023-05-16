@@ -36,7 +36,7 @@
 (e/defn Filter-control [state target label]
   (dom/a (dom/props {:class (when (= state target) "selected")})
     (dom/text label)
-    (dom/on "click" (e/fn [_] (swap! !state assoc ::filter target)))))
+    (dom/on! "click" (fn [_] (swap! !state assoc ::filter target)))))
 
 
 (e/defn TodoStats [state]
@@ -71,11 +71,14 @@
                                                 (e/server (transact! [{:db/id id, :task/status status}]) nil)))
               (dom/props {:class "toggle"}))
             (dom/label (dom/text description)
-                       (dom/on "dblclick" (e/fn [_] (swap! !state assoc ::editing id)))))
+              (dom/on! "dblclick" (fn [_] (swap! !state assoc ::editing id)))))
           (when (= id (::editing state))
             (dom/span (dom/props {:class "input-load-mask"})
               (dom/on-pending (dom/props {:aria-busy true})
                 (dom/input
+                  ; We wish this was ui/on-submit, but the event handling strategy is wrong.
+                  ; ui/on-submit is e/for-event-pending (concurrent)
+                  ; this has button semantics (commit or discard changes), want e/do-event-pending
                   (dom/on "keydown"
                     (e/fn [e]
                       (case (.-key e)
@@ -102,10 +105,9 @@
       (dom/section (dom/props {:class "main"})
         (let [active (e/server (todo-count db :active))
               all    (e/server (todo-count db :all))
-              done   (e/server (todo-count db :done))]
-          (ui/checkbox (cond (= all done)   true
-                             (= all active) false
-                             :else          nil)
+              done   (e/server (todo-count db :done))
+              checked (cond (= all done) true, (= all active) false, :else nil)]
+          (ui/checkbox checked
             (e/fn [v] (let [status (case v (true nil) :done, false :active)]
                         (e/server (transact! (toggle-all! db status)) nil)))
             (dom/props {:class "toggle-all"})))
