@@ -9,7 +9,7 @@
             [clojure.string :as str]
             [contrib.data :as data])
   (:import [hyperfiddle.electric Pending])
-  #?(:cljs (:require-macros [hyperfiddle.electric-dom2 :refer [with]])))
+  #?(:cljs (:require-macros [hyperfiddle.electric-dom2 :refer [with events->value]])))
 
 (e/def node)
 (def nil-subject (fn [!] (! nil) #()))
@@ -183,7 +183,7 @@
                                      (new (unmount-prop node (key prop#) nil))
                                      nil))))))
 
-#?(:cljs (def listen e/-listen)) ; private
+#?(:cljs (def listen* e/-listen)) ; private
 #?(:cljs (def event* e/event*))
 
 (defmacro on!
@@ -247,8 +247,47 @@
 
 (defmacro bind-value
   ([v]        `(bind-value ~v set-val))
-  ([v setter] `(when-some [v# (when-not (new Focused?) ~v)]
-                 (~setter node v#))))
+  ([v setter] `(let [v# ~v] (when-not (new Focused?) (~setter node v#)))))
+
+#?(:cljs (defn- -listen [node typ keep-fn opts]
+           (m/observe (fn [!] (listen* node typ #(when-some [v (keep-fn %)] (! v)) (clj->js opts))))))
+
+(defmacro listen "Returns a discrete flow of events of type `typ` from `node`.
+
+  Use with `e/each-event` and `e/for-event`.
+  Use `keep-fn` to map/filter events as `clojure.core/keep`.
+  A supplied cljs map `opts` will be passed as options to `node.addEventListener`"
+  ([typ] `(listen node ~typ))
+  ([node typ] `(listen ~node ~typ identity))
+  ([node typ keep-fn] `(listen ~node ~typ ~keep-fn {}))
+  ([node typ keep-fn opts] (list `-listen node typ keep-fn opts)))
+
+(defn- join [& flows] (->> flows m/seed (m/?> (count flows)) m/?> m/ap))
+(defmacro events->value "Turns discrete `flows` into an Electric value with initial value `init`."
+  [init & flows]
+  `(->> (join ~@flows) (m/reductions {} ~init) (m/relieve {}) new))
+
+(defmacro focused? "Returns whether this DOM `node` is focused."
+  ([] `(focused? node))
+  ([node] `(let [node# ~node]
+             (events->value (= node# (.-activeElement js/document))
+               (listen node# "focus" (constantly true))
+               (listen node# "blur" (constantly false))))))
+
+(defmacro hovered? "Returns whether this DOM `node` is hovered over. Starts `false`."
+  ([] `(hovered? node))
+  ([node] `(let [node# ~node]
+             (events->value false
+               (listen node# "mouseenter" (constantly true))
+               (listen node# "mouseleave" (constantly false))))))
+
+(defmacro ->value "Returns value of `node`'s `prop` on every event of type `typ`."
+  ([] `(->value "value"))
+  ([prop] `(->value "input" ~prop))
+  ([typ prop] `(->value dom/node ~typ ~prop))
+  ([node typ prop] `(let [node# ~node, typ# ~typ, prop# ~prop]
+                      (events->value (gobj-get node# prop#)
+                        (listen node# typ# #(gobj-get node# prop#))))))
 
 #?(:cljs (defn- -listen>-impl [node typ keep-fn opts]
            (m/observe (fn [!] (listen node typ #(when-some [v (keep-fn %)] (! v)) (clj->js opts))))))
