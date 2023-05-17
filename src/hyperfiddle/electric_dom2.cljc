@@ -183,16 +183,6 @@
                                      (new (unmount-prop node (key prop#) nil))
                                      nil))))))
 
-(defmacro on!
-  "Call the `callback` clojure function on event.
-   (on! \"click\" (fn [event] ...)) "
-  ([event-name callback] `(on! node ~event-name ~callback))
-  ([dom-node event-name callback] `(on! ~dom-node ~event-name ~callback nil))
-  ([dom-node event-name callback options] 
-   `(new (->> (e/listen> ~dom-node ~event-name ~callback ~options)
-           (m/reductions {} nil)))))
-
-(defmacro ^:deprecated ^:no-doc event "Deprecated, please use `on!`" [& args] `(on! ~@args))
 (e/def ^:deprecated system-time-ms e/system-time-ms)
 (e/def ^:deprecated system-time-secs e/system-time-secs)
 

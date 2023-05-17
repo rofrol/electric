@@ -179,7 +179,7 @@ can be pending."
                      (e/do-event-pending [e# (e/listen> dom/node "focus")]
                        (set! (.-value dom/node) "")
                        (let [return# (missionary.core/dfv)
-                             search# (or (dom/on! "input" value) "")]
+                             search# (new (m/reductions {} "" (e/listen> dom/node "input" value)))]
                          (binding [dom/node container-node#]
                            (let [!selected# (atom nil), selected# (e/watch !selected#)]
                              (dom/div (dom/props {:class "hyperfiddle-modal-backdrop"})
@@ -271,7 +271,7 @@ can be pending."
                        (let [[state# ret#]
                              (e/do-event-pending [e# (e/listen> dom/node "focus")]
                                (let [return# (missionary.core/dfv)
-                                     search# (or (dom/on! "input" value) "")]
+                                     search# (new (m/reductions {} "" (e/listen> dom/node "input" value)))]
                                  (binding [dom/node input-container-node#]
                                    (let [!selected# (atom nil), selected# (e/watch !selected#)]
                                      (dom/div (dom/props {:class "hyperfiddle-modal-backdrop"})

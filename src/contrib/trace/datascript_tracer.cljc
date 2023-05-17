@@ -6,7 +6,8 @@
             [hyperfiddle.electric-ui4 :as ui]
             [hyperfiddle.rcf :as rcf :refer [% tap tests with]]
             [contrib.crypt :as crypt]
-            [datascript.core :as d])
+            [datascript.core :as d]
+            [missionary.core :as m])
   (:import [hyperfiddle.electric Pending])
   #?(:cljs (:require-macros contrib.trace.datascript-tracer)))
 
@@ -144,7 +145,9 @@
                                                   ::ct/ok "#c5e8c5"
                                                   ::ct/err (if (instance? Pending v) "inherit" "#ffcaca"))})
           (dom/text (textify v))
-          (dom/on! "click" (fn [_] (swap! !measure next-measure-state trace))))))))
+          (new (m/reductions {} nil 
+                 (e/listen> dom/node "click"
+                   (fn [_] (swap! !measure next-measure-state trace))))))))))
 
 (defn ->origin [db] (reduce min (ms nil) (d/q '[:find [?stamp ...] :where [_ ::ct/stamp ?stamp]] db)))
 

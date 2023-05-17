@@ -29,10 +29,12 @@
 
 (e/defn PopoverBody [Body]
   (dom/div (dom/props {:class    "hyperfiddle popover-body"
-                       :tabIndex "1"})
-    (dom/on! "click" (fn [e]
-                       (when (= (.-target e) (.-currentTarget e)) ; click on self
-                         (.focus (.-currentTarget e)))))
+                       :tabIndex "1"}) 
+    (new (m/reductions {} nil
+           (e/listen> dom/node "click"
+             (fn [e]
+               (when (= (.-target e) (.-currentTarget e)) ; click on self
+                 (.focus (.-currentTarget e)))))))
     (BranchWrap. (e/fn [] (Body.)))))
 
 (e/defn Popover [label Body]
