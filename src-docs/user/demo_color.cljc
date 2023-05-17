@@ -3,7 +3,8 @@
             [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
             [hyperfiddle.history :as router]
-            [contrib.color :as c]))
+            [contrib.color :as c]
+            [missionary.core :as m]))
 
 ;; Goal is to demonstrate:
 ;; - fine-grained reactivity on CSS properties
@@ -63,7 +64,9 @@
                                :max   100
                                :step  1
                                :value l})
-          (dom/on! "input" (fn [^js e] (swap-route! assoc-vec 3 (js/parseInt (.. e -target -value))))))
+          (new (m/reductions {} nil
+                 (e/listen> dom/node "input"
+                   (fn [^js e] (swap-route! assoc-vec 3 (js/parseInt (.. e -target -value))))))))
         (dom/p (dom/text l "%"))
 
         (dom/p (dom/text "Saturation"))
@@ -72,7 +75,9 @@
                                :max   100
                                :step  1
                                :value s})
-          (dom/on! "input" (fn [^js e] (swap-route! assoc-vec 2 (js/parseInt (.. e -target -value))))))
+          (new (m/reductions {} nil
+                 (e/listen> dom/node "input"
+                   (fn [^js e] (swap-route! assoc-vec 2 (js/parseInt (.. e -target -value))))))))
         (dom/p (dom/text s "%"))
 
 
@@ -82,7 +87,9 @@
                                :max   360
                                :step  1
                                :value h})
-          (dom/on! "input" (fn [^js e] (swap-route! assoc-vec 1 (js/parseInt (.. e -target -value))))))
+          (new (m/reductions {} nil
+                 (e/listen> dom/node "input"
+                   (fn [^js e] (swap-route! assoc-vec 1 (js/parseInt (.. e -target -value))))))))
         (dom/p (dom/text h "°"))
 
 
