@@ -26,7 +26,8 @@
     (dom/div {:class "board"}
       (e/for [i (range 0 board-size)]
         (dom/div
-          (dom/on "mouseover" (e/fn [e] (e/server (swap! !moves conj i))))))
+          (e/for-event-pending-switch [_ (e/listen> dom/node "mouseover")]
+            (e/server (swap! !moves conj i)))))
       (e/for [i (e/server (e/watch !moves))]
         ; differential side effects, indexed by HTMLCollection
         (new (hot (.item (.. dom/node -children) i)))))))

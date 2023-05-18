@@ -126,9 +126,13 @@ can be pending."
 (defmacro ?mark-selected [selected] `(when (= dom/node ~selected) (dom/props {:class ["hyperfiddle-selected"]})))
 
 (defmacro return-on-click [return V! id]
-  `(dom/on "click" (e/fn [e#] (own e#)
-                     (dom/props {:style {:background-color "yellow"}})
-                     (~return (e/server (new ~V! ~id))))))
+  `(let [[state# v#] (e/do-event-pending [e# (e/listen> dom/node "click")]
+                       (own e#)
+                       (dom/props {:style {:background-color "yellow"}})
+                       (~return (e/server (new ~V! ~id))))]
+     (case state#
+       (::e/init ::e/ok) v#
+       (::e/pending ::e/failed) (throw v#))))
 
 #?(:cljs (defn ?pass-on-to-first [selected elem]
            (if (= selected elem)
@@ -183,8 +187,14 @@ can be pending."
                          (binding [dom/node container-node#]
                            (let [!selected# (atom nil), selected# (e/watch !selected#)]
                              (dom/div (dom/props {:class "hyperfiddle-modal-backdrop"})
-                               (dom/on "click" (e/fn [e#] (return# nil))))
-                             (dom/on "keydown" (e/fn [e#] (handle-meta-keys e# input-node# return# !selected# V!#)))
+                               (new (m/relieve {}
+                                      (m/reductions {} nil
+                                        (e/listen> dom/node "click" (fn [e#] (return# nil)))))))
+                             (let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node "keydown")]
+                                                 (handle-meta-keys e# input-node# return# !selected# V!#))]
+                               (case state#
+                                 (::e/init ::e/ok) v#
+                                 (::e/pending ::e/failed) (throw v#)))
                              (dom/ul
                                (e/server
                                  (for-truncated [id# (new Options# search#)] 20
@@ -194,7 +204,10 @@ can be pending."
                                        (e/on-unmount #(swap! !selected# ?pass-on-to-first dom/node))
                                        (track-id dom/node id#)
                                        (?mark-selected selected#)
-                                       (dom/on "mouseover" (e/fn [e#] (reset! !selected# dom/node)))
+                                       (new (m/relieve {}
+                                              (m/reductions {} nil
+                                                (e/listen> dom/node "mouseover"
+                                                  (fn [e#] (reset! !selected# dom/node))))))
                                        (return-on-click return# V!# id#))))))))
                          (new (e/task->cp return#))))]
                  (case state#
@@ -218,10 +231,16 @@ can be pending."
                              !selected# (atom nil), selected# (e/watch !selected#)]
                          (binding [dom/node container-node#]
                            (dom/div (dom/props {:class "hyperfiddle-modal-backdrop"})
-                             (dom/on "click" (e/fn [e#] (return# nil))))
-                           (dom/on "keydown" (e/fn [e#] (case (handle-meta-keys e# input-node# return# !selected# V!#)
-                                                          ::unhandled (own e#)
-                                                          #_else      nil)))
+                             (new (m/relieve {}
+                                      (m/reductions {} nil
+                                        (e/listen> dom/node "click" (fn [e#] (return# nil)))))))
+                           (let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node "keydown")]
+                                               (case (handle-meta-keys e# input-node# return# !selected# V!#)
+                                                 ::unhandled (own e#)
+                                                 #_else nil))]
+                             (case state#
+                               (::e/init ::e/ok) v#
+                               (::e/pending ::e/failed) (throw v#)))
                            (dom/ul
                              (e/server
                                (e/for [id# (new Options#)]
@@ -231,7 +250,10 @@ can be pending."
                                        (when (= txt# (.-value input-node#)) (reset! !selected# dom/node))
                                        (track-id dom/node id#)
                                        (?mark-selected selected#)
-                                       (dom/on "mouseover" (e/fn [e#] (reset! !selected# dom/node)))
+                                       (new (m/relieve {}
+                                              (m/reductions {} nil
+                                                (e/listen> dom/node "mouseover"
+                                                  (fn [e#] (reset! !selected# dom/node))))))
                                        (return-on-click return# V!# id#))))))))
                          (new (e/task->cp return#))))]
                  (case state#
@@ -260,12 +282,19 @@ can be pending."
                    (let [txt# (new OptionLabel# id#)]
                      (e/client (dom/li (dom/text txt#)
                                  (dom/span (dom/text "×")
-                                   (dom/on "click" (e/fn [e#] (own e#) (e/server (new unV!# id#)))))))))))
+                                   (let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node "click")]
+                                                       (own e#) (e/server (new unV!# id#)))]
+                                     (case state#
+                                       (::e/init ::e/ok) v#
+                                       (::e/pending ::e/failed) (throw v#))))))))))
              (dom/div (dom/props {:class "hyperfiddle-tag-picker-input-container"})
                (let [input-container-node# dom/node]
                  (dom/input
                    (let [input-node# dom/node]
-                     (binding [dom/node container-node#] (dom/on "click" (e/fn [e#] (own e#) (focus input-node#))))
+                     (binding [dom/node container-node#]
+                       (new (m/relieve {}
+                              (m/reductions {} nil
+                                (e/listen> dom/node "click" (fn [e#] (own e#) (focus input-node#)))))))
                      (if (e/server (nil? V!#))
                        (dom/props {:disabled true})
                        (let [[state# ret#]
@@ -275,8 +304,14 @@ can be pending."
                                  (binding [dom/node input-container-node#]
                                    (let [!selected# (atom nil), selected# (e/watch !selected#)]
                                      (dom/div (dom/props {:class "hyperfiddle-modal-backdrop"})
-                                       (dom/on "click" (e/fn [e#] (own e#) (return# nil))))
-                                     (dom/on "keydown" (e/fn [e#] (handle-meta-keys e# input-node# return# !selected# V!#)))
+                                       (new (m/relieve {}
+                                              (m/reductions {} nil
+                                                (e/listen> dom/node "click" (fn [e#] (own e#) (return# nil)))))))
+                                     (let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node "keydown")]
+                                                         (handle-meta-keys e# input-node# return# !selected# V!#))]
+                                       (case state#
+                                         (::e/init ::e/ok) v#
+                                         (::e/pending ::e/failed) (throw v#)))
                                      (dom/ul
                                        (e/server
                                          (for-truncated [id# (new Options# search#)] 20
@@ -286,7 +321,10 @@ can be pending."
                                                (e/on-unmount #(swap! !selected# ?pass-on-to-first dom/node))
                                                (track-id dom/node id#)
                                                (?mark-selected selected#)
-                                               (dom/on "mouseover" (e/fn [e#] (reset! !selected# dom/node)))
+                                               (new (m/relieve {}
+                                                      (m/reductions {} nil
+                                                        (e/listen> dom/node "mouseover"
+                                                          (fn [e#] (reset! !selected# dom/node))))))
                                                (return-on-click return# V!# id#))))))))
                                  (let [ret# (new (e/task->cp return#))]
                                    (case ret# (set! (.-value input-node#) ""))

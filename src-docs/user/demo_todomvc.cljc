@@ -2,11 +2,12 @@
   "Requires -Xss2m to compile. The Electric compiler exceeds the default 1m JVM ThreadStackSize
   due to large macroexpansion resulting in false StackOverflowError during analysis."
   (:require
-   contrib.str
    #?(:clj [datascript.core :as d])
+   contrib.str
    [hyperfiddle.electric :as e]
    [hyperfiddle.electric-dom2 :as dom]
-   [hyperfiddle.electric-ui4 :as ui]))
+   [hyperfiddle.electric-ui4 :as ui]
+   [missionary.core :as m]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil))       ; server
 (e/def db)                                                  ; server
@@ -36,7 +37,9 @@
 (e/defn Filter-control [state target label]
   (dom/a (dom/props {:class (when (= state target) "selected")})
     (dom/text label)
-    (dom/on "click" (e/fn [_] (swap! !state assoc ::filter target)))))
+    (new (m/relieve {}
+           (m/reductions {} nil
+             (e/listen> dom/node "click" (fn [_] (swap! !state assoc ::filter target))))))))
 
 
 (e/defn TodoStats [state]
@@ -71,19 +74,24 @@
                                                 (e/server (transact! [{:db/id id, :task/status status}]) nil)))
               (dom/props {:class "toggle"}))
             (dom/label (dom/text description)
-                       (dom/on "dblclick" (e/fn [_] (swap! !state assoc ::editing id)))))
+              (new (m/relieve {}
+                     (m/reductions {} nil
+                       (e/listen> dom/node "dblclick" (fn [_] (swap! !state assoc ::editing id))))))))
           (when (= id (::editing state))
             (dom/span (dom/props {:class "input-load-mask"})
               (dom/on-pending (dom/props {:aria-busy true})
                 (dom/input
-                  (dom/on "keydown"
-                    (e/fn [e]
-                      (case (.-key e)
-                        "Enter" (when-some [description (contrib.str/blank->nil (-> e .-target .-value))]
-                                  (case (e/server (transact! [{:db/id id, :task/description description}]) nil)
-                                    (swap! !state assoc ::editing nil)))
-                        "Escape" (swap! !state assoc ::editing nil)
-                        nil)))
+                  (let [[state v]
+                        (e/for-event-pending-switch [e (e/listen> dom/node "keydown")]
+                          (case (.-key e)
+                            "Enter" (when-some [description (contrib.str/blank->nil (-> e .-target .-value))]
+                                      (case (e/server (transact! [{:db/id id, :task/description description}]) nil)
+                                        (swap! !state assoc ::editing nil)))
+                            "Escape" (swap! !state assoc ::editing nil)
+                            nil))]
+                    (case state
+                      (::e/init ::e/ok) v
+                      (::e/pending ::e/failed) (throw v)))
                   (dom/props {:class "edit" #_#_:autofocus true})
                   (dom/bind-value description) ; first set the initial value, then focus
                   (case description ; HACK sequence - run focus after description is available

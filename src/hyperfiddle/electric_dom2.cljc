@@ -186,19 +186,6 @@
 (e/def ^:deprecated system-time-ms e/system-time-ms)
 (e/def ^:deprecated system-time-secs e/system-time-secs)
 
-(defmacro on
-  "Run the given electric function on event.
-  (on \"click\" (e/fn [event] ...))"
-  ;; TODO add support of event options (see `event*`)
-  ;(^:deprecated [typ]  `(new Event ~typ false)) ; use `on!` for local side effects
-  ([typ F] `(on node ~typ ~F))
-  ([node typ F] `(binding [node ~node]
-                   (let [[state# v#] (e/for-event-pending-switch [e# (e/listen> node ~typ)] (new ~F e#))]
-                     (case state#
-                       (::e/init ::e/ok) v# ; could be `nil`, for backward compat we keep it
-                       (::e/pending) (throw (Pending.))
-                       (::e/failed)  (throw v#))))))
-
 #?(:cljs (e/def visibility-state "'hidden' | 'visible'"
            (new (->> (e/listen> js/document "visibilitychange")
                   (m/reductions {} nil)

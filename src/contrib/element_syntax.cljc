@@ -3,7 +3,8 @@
   use at your own risk!"
   #?(:cljs (:require-macros [contrib.element-syntax :refer [<%]]))
   (:require [clojure.string :as str]
-            [hyperfiddle.electric-dom2 :as dom]))
+            [hyperfiddle.electric-dom2 :as dom]
+            [hyperfiddle.electric :as e]))
 
 (defn element-class-names [elt]
   (map second (re-seq #"\.([^.#]+)" (name elt))))
@@ -59,7 +60,11 @@
       ~(when attrs
          `(dom/props ~attrs))
       ~@(for [[h b] handlers]
-          `(dom/on ~h ~b))
+          `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~h)]
+                               (new ~b e#))]
+             (case state#
+               (::e/init ::e/ok) v#
+               (::e/pending ::e/failed) (throw v#))))
       ~@(for [c content]
           (if (string? c)
             `(dom/text ~c)
