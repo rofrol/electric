@@ -2,7 +2,8 @@
   (:require [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
             [hyperfiddle.electric-ui4 :as ui4]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [missionary.core :as m]))
 
 ;;; Instructions
 ;; https://eugenkiss.github.io/7guis/tasks#crud
@@ -80,7 +81,9 @@
                                       :color (if (= selected id) :white :inherit)
                                       :background-color (if (= selected id) :blue :inherit)
                                       :padding "0.1rem 0.5rem"}})
-                  (dom/on "click" (e/fn [_] (select! id))))))))
+                  (new (m/relieve {}
+                         (m/reductions {} nil
+                           (e/listen> dom/node "click" (fn [_] (select! id)))))))))))
         (let [stage (:stage state)]
           (dom/span (dom/props {:style {:grid-area "e"}}) (dom/text "Name:"))
           (ui4/input (:name stage) (e/fn [v] (set-name! v))
