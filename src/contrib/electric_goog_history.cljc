@@ -68,9 +68,12 @@
 (e/defn Link [href label]
   (e/client
     (dom/a {::dom/href href}
-      (dom/on "click" (e/fn [e]
-                        (-historySetToken !history href)
-                        (.preventDefault e)))
+      (let [!h !history]
+        (new (m/relieve {}
+               (m/reductions {} nil
+                 (e/listen> dom/node "click" (fn [e]
+                                               (-historySetToken !h href)
+                                               (.preventDefault e)))))))
       (dom/text label))))
 
 (defn parse-route [path] path)
