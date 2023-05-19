@@ -20,6 +20,7 @@
             user.demo-10k-dom
             user.demo-svg
             user.demo-todos-simple
+            user.demo-todos-advanced
             user.tutorial-7guis-1-counter
             user.tutorial-7guis-2-temperature
             user.tutorial-7guis-4-timer
@@ -88,5 +89,6 @@
       (set! (.-title js/document) (str (clojure.string/capitalize (name (first history/route))) " - Hyperfiddle"))
       (binding [dom/node js/document.body]
         (dom/pre (dom/text (contrib.str/pprint-str history/route)))
-        (let [[page & args] history/route]
+        (e/server (user.demo-todos-advanced/AdvancedTodoList.))
+        #_(let [[page & args] history/route]
           (e/server (new (Pages. page #_args))))))))
