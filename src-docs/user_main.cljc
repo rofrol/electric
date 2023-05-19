@@ -22,6 +22,7 @@
             user.demo-todos-simple
             wip.demo-todos-advanced-old
             wip.demo-todos-advanced
+            user.demo-todos-advanced ; from dustin/masterlist
             user.tutorial-7guis-1-counter
             user.tutorial-7guis-2-temperature
             user.tutorial-7guis-4-timer
@@ -90,5 +91,6 @@
       (set! (.-title js/document) (str (clojure.string/capitalize (name (first history/route))) " - Hyperfiddle"))
       (binding [dom/node js/document.body]
         (dom/pre (dom/text (contrib.str/pprint-str history/route)))
-        (let [[page & args] history/route]
+        (e/server (user.demo-todos-advanced/AdvancedTodoList.))
+        #_(let [[page & args] history/route]
           (e/server (new (Pages. page #_args))))))))
