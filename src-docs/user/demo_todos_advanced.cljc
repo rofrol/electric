@@ -6,7 +6,9 @@
             [hyperfiddle.electric-dom2 :as dom]
             [missionary.core :as m]
             [hyperfiddle.electric-ui4 :as ui]
-            [contrib.debug :as dbg]))
+            [hyperfiddle.electric-ui5 :as ui5]
+            [contrib.debug :as dbg]
+            [hyperfiddle.electric.impl.runtime :as r]))
 
 (defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
 (comment (alter-var-root #'!conn (fn [_] (d/create-conn {}))))
@@ -45,27 +47,32 @@
     (ui/range fail-rate (e/fn [v] (e/server (reset! !fail-rate v)))
       (dom/props {:min min, :max max, :style {:width "200px"}}))))
 
-(defn ->task [desc] {:task/description desc, :task/status :active, :task/order (swap! !order-id inc)})
-
 #?(:clj (defn todo-count [db] (count (d/q '[:find [?e ...] :where [?e :task/status :active]] db))))
 
 #?(:clj (defn todo-records [db]
-          (->> (d/q '[:find [(pull ?e [:db/id :task/description :task/order]) ...] :where [?e :task/status]] db)
+          (->> (d/q '[:find [(pull ?e [:db/id
+                                       :task/description
+                                       :task/status
+                                       #_:task/order]) ...]
+                      :where [?e :task/status]] db)
             (sort-by :task/order #(compare %2 %1)))))
 
-(e/defn TodoItem [id]
-  (e/server
-    (let [e (d/entity db id)
-          status (:task/status e)
-          server-checked? (= :done status)]
-      (e/client
-        (dom/div
-          ;; TODO a failed tick won't revert, is that expected/good?
-          (ui/checkbox server-checked?
-            (e/fn [checked?]
-              (e/server (new Tx! [[:db/add id :task/status (if checked? :done :active)]])))
-            (dom/props {:id id}))
-          (dom/label (dom/props {:for id}) (dom/text (e/server (:task/description e)))))))))
+; render the state of the UI for this stable-id
+
+(e/defn TodoItem [record]
+  (e/client
+    (dom/div
+      (ui5/checkbox
+        record
+        (e/fn [v] (= :done (:task/status v)))
+        (e/fn [checked?]
+          (e/server (new Tx! [[:db/add (:db/id record)
+                               :task/status (if checked? :done :active)]])))
+        (dom/props {:id e}))
+      (dom/label (dom/props {:for e}) (dom/text (e/server (:task/description e)))))))
+
+(e/defn MasterList []
+  )
 
 (e/defn AdvancedTodoList []
   (e/server
@@ -76,27 +83,25 @@
         (Latency. 0 2000)
         (FailRate. 0 10)
         (dom/div (dom/props {:class "todo-list"})
-          ;; we have to tuck away the input node because we'll be mounting nodes under a <ul>
-          (let [in (dom/input (dom/props {:placeholder "Buy milk"}) dom/node)]
-            (dom/div {:class "todo-items"}
-              ;; client-side concurrent optimistically rendered list of tasks
-              (e/for-event [v (e/listen> in "keydown" (partial ui/?read-line! in))]
-                (dom/div
-                  (let [!err (atom nil), err (e/watch !err)]
-                    (if-not err              ; base case, go and try to transact
-                      (try (reduced (e/server (new Tx! [(->task v)])))
-                           (catch Pending _ (dom/text "⌛ " v)) ; render spinner while waiting
-                           (catch Cancelled _) ; work around electric bug
-                           (catch :default e (reset! !err e))) ; tx failed, trigger other branch
-                      ;; tx failed, render failed value with retry button
-                      (do (dom/text "💀 " v)
-                          (ui/button (e/fn [] (reset! !err nil))
-                            (dom/text "⟳"))
-                          (dom/text " (" (ex-message err) ")"))))))
-              ;; server-side query rendered commited list of tasks
-              (e/server
-                (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
-                  (TodoItem. id)))))
+          ;(dom/div {:class "todo-items"})
+          (let [optimistic-records
+                (dom/input (dom/props {:placeholder "Buy milk"}) ; todo move into TodoItem
+                  (->> (m/observe (fn [!]
+                                    (e/dom-listener dom/node "keydown"
+                                      #(when-some [v (ui/?read-line! dom/node %)]
+                                         (! v)))))
+                    (m/eduction (map (fn [input-val]
+                                       {:db/id (random-uuid)
+                                        :task/description input-val
+                                        :task/status :active
+                                        #_#_:task/order (e/server (swap! !order-id inc))})))
+                    (m/reductions conj [])
+                    new))]
+            (e/client #_e/server ; fixme
+              (e/for-by :db/id [record (clojure.set/union
+                                         (set (e/server (todo-records db))) ; will accumulate duplicates (which the union will clear but it's weird)
+                                         (set optimistic-records))]
+                (TodoItem. record))))
           (dom/p (dom/props {:class "counter"})
             (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
             (dom/text " items left")))))))
