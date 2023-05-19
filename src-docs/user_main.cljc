@@ -28,6 +28,7 @@
             user.demo-color
             user.demo-tic-tac-toe
             user.tutorial-blinker
+            wip.button-with-progress-as-value
             wip.tag-picker
             wip.demo-custom-types
             wip.tracing
@@ -88,5 +89,6 @@
       (set! (.-title js/document) (str (clojure.string/capitalize (name (first history/route))) " - Hyperfiddle"))
       (binding [dom/node js/document.body]
         (dom/pre (dom/text (contrib.str/pprint-str history/route)))
-        (let [[page & args] history/route]
+        (e/server (wip.button-with-progress-as-value/App.))
+        #_(let [[page & args] history/route]
           (e/server (new (Pages. page #_args))))))))

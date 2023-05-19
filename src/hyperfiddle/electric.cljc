@@ -501,11 +501,11 @@ unmounts the body, returning nil while waiting for a fresh event."
      (new (m/reductions #(swap! !e# (cc/fn [cur#] ; latch first non-nil event
                                       (if (nil? cur#) %2 cur#))) ; discarding events until event processing completes
             nil ~>flow))
-     (when-some [~sym (hyperfiddle.electric/watch !e#)] ; wait for non-nil event (rising edge), bind in scope for body
-       (let [v# (do ~@body)] ; nil is insignificant here
-         (if (reduced? v#) ; never seen
-           (reset! !e# nil) ; reset, unmount body, wait for fresh event
-           v#)))))
+     (with-cycle [ret# (reduced ::init)]
+       (when (reduced? ret#) (reset! !e# nil))
+       (if-some [~sym (hyperfiddle.electric/watch !e#)] ; wait for non-nil event (rising edge), bind in scope for body
+         (do ~@body)
+         ret#))))
 
 (defmacro do-event-pending
   "Run `body` continuation in response to next event (silently discarding subsequent 

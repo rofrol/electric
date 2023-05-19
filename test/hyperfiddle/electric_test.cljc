@@ -9,7 +9,8 @@
             [hyperfiddle.rcf :as rcf :refer [tests tap % with]]
             [missionary.core :as m]
             [clojure.test :as t]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [hyperfiddle.electric-dom2 :as dom])
   (:import missionary.Cancelled
            [hyperfiddle.electric Pending Failure]
            #?(:clj [clojure.lang ExceptionInfo])))
@@ -2143,16 +2144,16 @@
                                       "caught" (reduced nil)
                                       #_else (throw e))))))
                          (catch #?(:clj Throwable :cljs :default) e [(type e) (ex-message e)]))))
-    #_init                   % := nil
+    #_init                   (unreduced %) := ::e/init
     (@! 0), % := [:mount 0], % := :pending
     (@! 1)                              ; skipped, previous still running
-    (!! 0 (reduced false)),  % := nil
+    (!! 0 (reduced false)),  (unreduced %) := false
     (@! 2), % := [:mount 2], % := :pending
-    (!! 2 :caught),          % := nil
+    (!! 2 :caught),          (unreduced %) := nil
     (@! 9), % := [:mount 9], % := :pending
     (!! 9 :uncaught),        % := [ExceptionInfo "uncaught"]
     (!! 9 :alive),           % := :alive
-    (!! 9 (reduced true)),   % := nil
+    (!! 9 (reduced true)),   (unreduced %) := true
 
     (tap ::done), % := ::done, (println " ok")))
 
@@ -2178,3 +2179,36 @@
     (!! 2 :fail),            % := [::e/failed fail]
 
     (tap ::done), % := ::done, (println " ok")))
+
+(comment
+  ;; input field, local filter
+  (dom/input
+    ;; today we'd use e/for-event-switch to isolate the frames, do we want that?
+    (let [ret (e/let-latest [v (e/listen> dom/node "input" current-target-value)]
+                ;; even if no `reduced` value we supersede
+                ;; still need `reduced` to signal completion
+                (reduced (e/server (store! v) ::stored)))]
+      (when (and (not (reduced? ret)) (not (dom/Focused?.)))
+        (set! (.-value dom/node) controlled-value))))
+  ;; tx button
+  (dom/button
+    (let [ret (e/do-event [e (e/listen> dom/node "click")]
+                ;; if not yet `reduced` ignore E2
+                (reduced (e/server (tx!) ::done)))]
+      (dom/props {:disabled (not (reduced? ret))})))
+  ;; progress button
+  (dom/button
+    (let [progress (e/do-event [e (e/listen> dom/node "click")]
+                     (let [progress (e/server (do!))]
+                       (cond-> progress
+                         (= progress 100) reduced)))]
+      (dom/props {:disabled (not (reduced? progress))})))
+  ;; create new
+  (let [input (dom/input dom/node)]
+    (dom/ul
+      (let [alive (e/for-event [in (e/listen> input "keydown" (partial ui/?read-line! input))]
+                    (dom/li
+                      ;; branch alive until server send succeeds
+                      (try (reduced (e/server (send-message! in)))
+                           (catch Pending ex (dom/text "⌛ " in) #_ (throw ex))
+                           (catch :default ex (dom/text "💀 " in) (ErrorTooltip. ex)))))]))))
