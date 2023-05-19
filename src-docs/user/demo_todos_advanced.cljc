@@ -51,7 +51,7 @@
 
 #?(:clj (defn todo-records [db]
           (->> (d/q '[:find [(pull ?e [:db/id :task/description :task/order]) ...] :where [?e :task/status]] db)
-            (sort-by :task/order))))
+            (sort-by :task/order #(compare %2 %1)))))
 
 (e/defn TodoItem [id]
   (e/server
@@ -79,10 +79,6 @@
           ;; we have to tuck away the input node because we'll be mounting nodes under a <ul>
           (let [in (dom/input (dom/props {:placeholder "Buy milk"}) dom/node)]
             (dom/div {:class "todo-items"}
-              ;; server-side query rendered commited list of tasks
-              (e/server
-                (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
-                  (TodoItem. id)))
               ;; client-side concurrent optimistically rendered list of tasks
               (e/for-event [v (e/listen> in "keydown" (partial ui/?read-line! in))]
                 (dom/div
@@ -96,7 +92,11 @@
                       (do (dom/text "💀 " v)
                           (ui/button (e/fn [] (reset! !err nil))
                             (dom/text "⟳"))
-                          (dom/text " (" (ex-message err) ")"))))))))
+                          (dom/text " (" (ex-message err) ")"))))))
+              ;; server-side query rendered commited list of tasks
+              (e/server
+                (e/for-by :db/id [{:keys [db/id]} (todo-records db)]
+                  (TodoItem. id)))))
           (dom/p (dom/props {:class "counter"})
             (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
             (dom/text " items left")))))))
