@@ -23,6 +23,7 @@
      ~@body
      (case state# (::e/pending ::e/failed) (throw v#) (::e/init ::e/ok) v#)))
 
+; UI5
 (defmacro control' [event-type parse unparse v V! setter & body]
   `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~event-type)]
                        (some->> (~parse e#) (new ~V!)))]
