@@ -23,6 +23,16 @@
      ~@body
      (case state# (::e/pending ::e/failed) (throw v#) (::e/init ::e/ok) v#)))
 
+(defmacro control' [event-type parse unparse v V! setter & body]
+  `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~event-type)]
+                       (some->> (~parse e#) (new ~V!)))]
+     (dom/style {:background-color (when (= ::e/pending state#) "yellow")})
+     ; workaround "when-true" bug: extra outer when-some added to guard a nil from incorrectly sneaking through
+     (when-some [v# (when (and (not (new dom/Focused?)) (#{::e/init ::e/ok} state#)) ~v)]
+       (~setter dom/node (~unparse v#))) ; js coerce
+     ~@body
+     [state# v#]))
+
 (defmacro input [v V! & body]
   `(dom/input
      (control "input" value identity ~v ~V! dom/set-val ~@body)))
@@ -49,11 +59,14 @@
 
 (defmacro checkbox [v V! & body]
   `(dom/input (dom/props {:type "checkbox"})
-     (control "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)))
-
-(defmacro long [v V! & body]
-  `(dom/input (dom/props {:type "number"})
-     (control "input" (comp parse-long value) identity ~v ~V! dom/set-val ~@body)))
+     (let [[state# v#] (control' "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)]
+       (dom/style {:outline (str "2px solid " (case state#
+                                                ::e/init "gray"
+                                                ::e/ok "green"
+                                                ::e/pending "yellow"
+                                                ::e/failed "red"))})
+       #_(case state# (::e/pending ::e/failed) (throw v#) (::e/init ::e/ok) v#)))) ; compat, spams exceptions due to interaction between Exceptions and work-skipping
+; exceptions are higher priority than values
 
 (defmacro range [v V! & body]
   `(dom/input (dom/props {:type "range"})
