@@ -55,7 +55,7 @@
   #_(require '[contrib.datomic-m :as d])
   #_(when (not-empty (eval '(d/detect-datomic-products)))
     #_(contrib.datomic-m/install-datomic-onprem)
-    (eval '(contrib.datomic-m/install-datomic-cloud))
+    #_(eval '(contrib.datomic-m/install-datomic-cloud))
     (def datomic-config {:server-type :dev-local :system "datomic-samples"})
     ;; install prod globals
     (def datomic-client (eval '(d/client datomic-config)))

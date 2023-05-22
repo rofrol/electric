@@ -8,46 +8,18 @@
             [missionary.core :as m]
             [contrib.debug :as dbg]))
 
-;; (defn tempid? [x] (string? x))
-
-;; (e/defn Read-entity [id]
-;;   (try
-;;     (e/server [::e/init (into {} (d/touch (d/entity db id)))])
-;;     (catch Pending _ [::e/pending nil])
-;;     (catch :default e [::e/failed e])))
-
-;; (e/defn Create-entity [id record]
-;;   (try ; create is never ::e/init
-;;     (e/server
-;;       (new Tx! [record]) ; returns tx-report which has :ids->tempids
-;;       [::e/ok (into {} (d/touch (d/entity db id)))])
-;;     (catch Pending _ [::e/pending record]) ; optimistic
-;;     (catch :default e [::e/failed e])))
-
-;; (e/defn Ensure-entity [id record]
-;;   (if-not (tempid? id)
-;;     (Read-entity. id)
-;;     (Create-entity. id record))) ; todo must be idempotent
-
-;; (defmacro control [event-type parse unparse v V! setter & body]
-;;   `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~event-type)]
-;;                        (some->> (~parse e#) (new ~V!)))]
-;;      #_(dom/style {:background-color (when (= ::e/pending state#) "yellow")})
-;;      ; workaround "when-true" bug: extra outer when-some added to guard a nil from incorrectly sneaking through
-;;      (when-some [v# (when (and (not (new dom/Focused?)) (#{::e/init ::e/ok} state#)) ~v)]
-;;        (~setter dom/node (~unparse v#))) ; js coerce
-;;      ~@body
-;;      [state# v#]))
-
 (e/def local?)
 (def tempid? (some-fn nil? string?))
 
-(defmacro entity [record EnsureEntity & body]
-  `(let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)]
-     (case state# ::e/failed (.error js/console e#) nil)
-     ;; mark entity local for downstream code
-     (binding [local? (tempid? (:db/id ~record))]
-       ~@body)))
+(defmacro control [event-type parse unparse v V! setter & body]
+  `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~event-type)]
+                       (some->> (~parse e#) (new ~V!)))]
+     #_(dom/style {:background-color (when (= ::e/pending state#) "yellow")}) ; collision
+     ; workaround "when-true" bug: extra outer when-some added to guard a nil from incorrectly sneaking through
+     (when-some [v# (when (and (not (new dom/Focused?)) (#{::e/init ::e/ok} state#)) ~v)]
+       (~setter dom/node (~unparse v#))) ; js coerce
+     ~@body
+     [state# v#]))
 
 (defmacro input [v V! & body]
   `(dom/input
@@ -58,6 +30,16 @@
        (case state# ::e/failed (.error js/console v#) nil)
        ~@body)))
 
+(defmacro entity [record EnsureEntity & body]
+  `(dom/div (dom/text "entity" (:hf/stable-id ~record))
+     (let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)
+           color# (case state# ::e/init "gray", ::e/ok "green", ::e/pending "yellow", ::e/failed "red")]  ; tooltip
+       (dom/style {:border (str "2px solid " color#)})
+       (case state# ::e/failed (.error js/console e#) nil)
+       
+       (binding [local? (tempid? (:db/id ~record))] ;; mark entity local for downstream code
+         ~@body))))
+
 ;; (defmacro checkbox [v V! & body]
 ;;   `(dom/input (dom/props {:type "checkbox"})
 ;;      (let [[state# v#] (control "change" #(-> % .-target .-checked) identity ~v ~V! #(set! (.-checked %) %2))
@@ -67,13 +49,13 @@
 ;;        (case state# ::e/failed (.error js/console v#) nil)
 ;;        ~@body)))
 
-(defmacro checkbox [record V V! & body]
+(defmacro checkbox [record V V! EnsureEntity & body]
   `(dom/input (dom/props {:type "checkbox"})
-     (let [[state# v#] (control' "change" checked identity ~v ~V! #(set! (.-checked %) %2)
+     (let [[state# v#] (control "change" checked identity ~record ~V! #(set! (.-checked %) %2)
                          ~@body)]
 
-       (let [[state# e#] (Ensure-entity. ~(:db/id record) ~record)
-             v# (~V. e#)
+       (let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)
+             v# (new ~V e#)
              color# (case state# 
                       ::e/init "gray"
                       ::e/ok "green"
