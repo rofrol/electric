@@ -1,7 +1,7 @@
 (ns user.demo-todos-advanced
   (:import [hyperfiddle.electric Pending]
            [missionary Cancelled])
-  (:require #?(:clj [datascript.core :as d]) ; database on server
+  (:require #?(:clj [datomic.api :as d]) ; database on server
             [hyperfiddle.electric :as e]
             [hyperfiddle.electric-dom2 :as dom]
             [missionary.core :as m]
@@ -10,9 +10,30 @@
             [contrib.debug :as dbg]
             [hyperfiddle.electric.impl.runtime :as r]))
 
-(defonce !conn #?(:clj (d/create-conn {}) :cljs nil)) ; database on server
-(comment (alter-var-root #'!conn (fn [_] (d/create-conn {}))))
+#?(:clj (defn init-conn []
+          (let [uri "datomic:mem://db"]
+            (d/delete-database uri)
+            (d/create-database uri)
+            (d/connect uri))))
+
+(defonce !conn #?(:clj (init-conn) :cljs nil)) ; database on server
+#?(:clj (comment (alter-var-root #'!conn (fn [_] (d/connect "datomic:mem://db")))))
 (e/def db) ; injected database ref; Electric defs are always dynamic
+
+#?(:clj
+   (def schema
+     [{:db/ident :task/status,      :db/valueType :db.type/string, :db/cardinality :db.cardinality/one}
+      {:db/ident :task/description, :db/valueType :db.type/string, :db/cardinality :db.cardinality/one}
+      {:db/ident :hf/stable-id,     :db/valueType :db.type/uuid,   :db/cardinality :db.cardinality/one, :db/unique :db.unique/identity}]))
+
+(defonce !db #?(:clj (atom nil) :cljs nil))
+(defonce !taker #?(:clj (future
+                          (reset! !db (d/db !conn))
+                          (let [q (d/tx-report-queue !conn)]
+                            (loop []
+                              (reset! !db (:db-after (.take ^java.util.concurrent.LinkedBlockingQueue q)))
+                              (recur))))
+                   :cljs nil))
 
 ;; auto-incrementing task id, to define ordering
 ;; an optimistically rendered task won't jump on the screen
@@ -31,7 +52,7 @@
             (m/? (m/sleep @!latency))
             (if (< (rand-int 10) @!fail-rate)
               (throw (ex-info "tx failed" {:tx tx}))
-              (d/transact! !conn tx)))))
+              (d/transact !conn (dbg/dbg :tx tx))))))
 
 (e/def Tx!)
 
@@ -59,7 +80,28 @@
 
 ; render the state of the UI for this stable-id
 
-(e/defn TodoItem [record]
+(defn tempid? [x] (string? x))
+
+(e/defn ReadEntity [id]
+  (try
+    (e/server [::e/init (into {} (d/touch (d/entity db id)))])
+    (catch Pending _ [::e/pending nil])
+    (catch :default e [::e/failed e])))
+
+(e/defn CreateEntity [id record]
+  (try ; create is never ::e/init
+    (e/server
+      (new Tx! [record]) ; returns tx-report which has :ids->tempids
+      [::e/ok (into {} (d/touch (d/entity db id)))])
+    (catch Pending _ [::e/pending record]) ; optimistic
+    (catch :default e [::e/failed e])))
+
+(e/defn EnsureEntity [id record]
+  (if-not (tempid? id)
+    (ReadEntity. id)
+    (CreateEntity. id record))) ; todo must be idempotent
+
+(e/defn TodoItemOld [record]
   (e/client
     (dom/div
       (ui5/checkbox
@@ -68,15 +110,20 @@
         (e/fn [checked?]
           (e/server (new Tx! [[:db/add (:db/id record)
                                :task/status (if checked? :done :active)]])))
+        EnsureEntity
         (dom/props {:id e}))
       (dom/label (dom/props {:for e}) (dom/text (e/server (:task/description e)))))))
 
-(e/defn MasterList []
-  )
+(e/defn TodoItem [record]
+  (e/client
+    (dom/div (dom/pre (dom/text record))
+      (ui5/entity record EnsureEntity))))
 
 (e/defn AdvancedTodoList []
   (e/server
-    (binding [db (e/watch !conn), Tx! (e/fn [tx] (new (e/task->cp (tx! tx))) nil)]
+    (binding [db (e/watch !db), Tx! (e/fn [tx] (new (e/task->cp (tx! tx))) nil)]
+      (d/transact !conn schema)
+      (prn :db db)
       (e/client
         (dom/h1 (dom/text "advanced todo list with optimistic render and fail/retry"))
         (dom/p (dom/text "it's multiplayer, try two tabs"))
@@ -86,21 +133,17 @@
           ;(dom/div {:class "todo-items"})
           (let [optimistic-records
                 (dom/input (dom/props {:placeholder "Buy milk"}) ; todo move into TodoItem
-                  (->> (m/observe (fn [!]
-                                    (e/dom-listener dom/node "keydown"
-                                      #(when-some [v (ui/?read-line! dom/node %)]
-                                         (! v)))))
+                  (->> (m/observe (fn [!] (e/dom-listener dom/node "keydown" #(some-> (ui/?read-line! dom/node %) !))))
                     (m/eduction (map (fn [input-val]
-                                       {:db/id (random-uuid)
+                                       {:hf/stable-id (random-uuid)
                                         :task/description input-val
                                         :task/status :active
                                         #_#_:task/order (e/server (swap! !order-id inc))})))
                     (m/reductions conj [])
                     new))]
+            (prn optimistic-records)
             (e/client #_e/server ; fixme
-              (e/for-by :db/id [record (clojure.set/union
-                                         (set (e/server (todo-records db))) ; will accumulate duplicates (which the union will clear but it's weird)
-                                         (set optimistic-records))]
+              (e/for-by :hf/stable-id [record (into #{} cat [(e/server (todo-records db)) optimistic-records])]
                 (TodoItem. record))))
           (dom/p (dom/props {:class "counter"})
             (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
