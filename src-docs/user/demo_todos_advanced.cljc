@@ -90,7 +90,7 @@
 
 (e/defn CreateEntity [id record]
   (try ; create is never ::e/init
-    (e/server
+    (e/server ; return txns to stage, not inline txn
       (new Tx! [record]) ; returns tx-report which has :ids->tempids
       [::e/ok (into {} (d/touch (d/entity db id)))])
     (catch Pending _ [::e/pending record]) ; optimistic
@@ -114,10 +114,22 @@
         (dom/props {:id e}))
       (dom/label (dom/props {:for e}) (dom/text (e/server (:task/description e)))))))
 
+(e/defn MasterList [TodoItem]
+  (e/server
+    ; create new (modal semantics, user submits via "stage" or "enter", can be rapid) 
+    (let [_ (ui5/modal (TodoItem. {:task/status :active}))
+          optimistic-records .
+          txns hf/stage]
+      
+      (e/for-by :hf/stable-id [record (todo-records db)] optimistic-records
+        (TodoItem. record)))))
+
 (e/defn TodoItem [record]
   (e/client
     (dom/div (dom/pre (dom/text record))
-      (ui5/entity record EnsureEntity))))
+      #_(ui5/entity record EnsureEntity) 
+      (ui5/checkbox)
+      (ui5/input))))
 
 (e/defn AdvancedTodoList []
   (e/server
@@ -130,7 +142,10 @@
         (Latency. 0 2000)
         (FailRate. 0 10)
         (dom/div (dom/props {:class "todo-list"})
-          ;(dom/div {:class "todo-items"})
+          ;(dom/div {:class "todo-items"}) 
+          
+          (MasterList. TodoItem)
+                    
           (let [optimistic-records
                 (dom/input (dom/props {:placeholder "Buy milk"}) ; todo move into TodoItem
                   (->> (m/observe (fn [!] (e/dom-listener dom/node "keydown" #(some-> (ui/?read-line! dom/node %) !))))
@@ -142,9 +157,27 @@
                     (m/reductions conj [])
                     new))]
             (prn optimistic-records)
+
+            (e/client
+              (e/for-by-optimistic :hf/stable-id [record (e/offload #(todo-records db))] ; syntax bad
+                optimistic-records
+                (TodoItem. record)))
+
+            (e/client
+              (e/for-event :hf/stable-id [record (mx/mix
+                                                   ; e/server here is broken, can't move >xs
+                                                   (e/server (e/diff> :hf/stable-id (e/offload #(todo-records db))))
+                                                   (e/client (e/diff> :hf/stable-id optimistic-records)))]
+                (TodoItem. record)))
+
             (e/client #_e/server ; fixme
               (e/for-by :hf/stable-id [record (into #{} cat [(e/server (todo-records db)) optimistic-records])]
-                (TodoItem. record))))
+                (TodoItem. record)))
+            
+            #_(e/server
+                (e/for-by :hf/stable-id [record (todo-records db)] optimistic-records
+                  (TodoItem. record))))
+          
           (dom/p (dom/props {:class "counter"})
             (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
             (dom/text " items left")))))))
