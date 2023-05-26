@@ -165,9 +165,11 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
 
 ; DOM event utilities promoted due to visibility-state being critical
 
-#?(:cljs (cc/defn dom-listener [node typ f opts] 
-           (.addEventListener node typ f (clj->js opts))
-           #(.removeEventListener node typ f)))
+#?(:cljs (cc/defn dom-listener
+           ([node typ f] (dom-listener node typ f {}))
+           ([node typ f opts]
+            (.addEventListener node typ f (clj->js opts))
+            #(.removeEventListener node typ f))))
 
 #?(:cljs (cc/defn listen>
            ([node event-type] (listen> node event-type identity {}))
