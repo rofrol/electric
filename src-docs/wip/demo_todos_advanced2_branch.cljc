@@ -64,12 +64,13 @@
     (catch :default e [::e/failed e])))
 
 (e/def Stage!)
+(e/def Unstage!)
 
 (e/defn CreateEntity [id record]
   (try ; create is never ::e/init
     (e/server
       (when-not (d/entity db id)
-        (let [[state v] (new Stage! [record] (random-uuid))]
+        (let [[state v] (new Stage! [record] (:hf/stable-id record))]
           (case state                ; returns tx-report which has :ids->tempids
             ::e/ok [::e/ok (into {} (d/touch (d/entity db id)))]
             ::e/pending [::e/pending record]
@@ -87,7 +88,7 @@
              (when (and (= "Enter" (.-key e)) (contrib.str/blank->nil line))
                line))))
 
-(e/defn TodoItem [record]
+(e/defn TodoItem [record !removed-records]
   (e/client
     (dom/div (dom/style {:display "flex", :align-items "center"})
       (ui5/entity record EnsureEntity
@@ -112,7 +113,11 @@
                 (when (= ::e/failed state) (.error js/console v))
                 (.focus dom/node)))
             (dom/div (dom/text (:task/description record))
-              (new (m/observe (fn [!] (! nil) (e/dom-listener dom/node "dblclick" #(reset! !edit? true))))))))))))
+              (new (m/observe (fn [!] (! nil) (e/dom-listener dom/node "dblclick" #(reset! !edit? true)))))
+              (ui/button (e/fn []
+                           (case (new Unstage! (:hf/stable-id record))
+                             (swap! !removed-records conj record)))
+                (dom/text "✖")))))))))
 
 (e/defn AdvancedTodoList []
   (e/server
@@ -122,7 +127,8 @@
       (binding [db (:db branch)]
         (binding [Stage! (hb/->stage-fn !branch)]
           (e/client
-            (binding [Stage! (hb/->stage-fn !branch)]
+            (binding [Stage! (hb/->stage-fn !branch)
+                      Unstage! (hb/->unstage-fn !branch)]
               (dom/h1 (dom/text "advanced todo list with optimistic render and fail/retry"))
               (dom/p (dom/text "it's multiplayer, try two tabs"))
               (dom/div (dom/props {:class "todo-list"})
@@ -136,16 +142,19 @@
                                                 :task/description input-val
                                                 :task/status :active}))))
                           (m/reductions conj [])
-                          new))]
-                  (e/client #_e/server ; fixme
+                          new))
+                      !removed-records (atom [])]
+                  (e/client #_e/server  ; fixme
                     ;; we have a local and remote list of records
                     ;; we'd need to diff them on their respective peers and integrate them on the client
                     ;; currently we don't have this functionality so we hack it
                     ;; by sending the whole server collection to the client
                     (e/for-by :hf/stable-id [record (vals (reduce (fn [ac nx] (assoc ac (:hf/stable-id nx) nx))
-                                                            (contrib.data/index-by :hf/stable-id optimistic-records)
+                                                            (reduce (fn [ac nx] (dissoc ac (:hf/stable-id nx)))
+                                                              (contrib.data/index-by :hf/stable-id optimistic-records)
+                                                              (e/watch !removed-records))
                                                             (e/server (todo-records db))))]
-                      (TodoItem. record))))
+                      (TodoItem. record !removed-records))))
                 (dom/p (dom/props {:class "counter"})
                   (dom/span (dom/props {:class "count"}) (dom/text (e/server (todo-count db))))
                   (dom/text " items left"))))))))))

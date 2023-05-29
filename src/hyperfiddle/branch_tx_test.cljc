@@ -10,12 +10,13 @@
 ;; async transactions
 ;; discard 1 tx
 ;; find out what locks
+;; don't rerun txs when new one comes in
 
 #?(:clj
    (def schema
      [{:db/ident :task/status,      :db/valueType :db.type/keyword, :db/cardinality :db.cardinality/one}
       {:db/ident :task/description, :db/valueType :db.type/string,  :db/cardinality :db.cardinality/one}
-      {:db/ident :task/id,     :db/valueType :db.type/uuid,    :db/cardinality :db.cardinality/one, :db/unique :db.unique/identity}]))
+      {:db/ident :task/id, :db/valueType :db.type/uuid, :db/cardinality :db.cardinality/one, :db/unique :db.unique/identity}]))
 
 #?(:clj (defn ->in-memory-conn [db-name schema]
           (let [uri (str "datomic:mem://" db-name)]
@@ -82,7 +83,11 @@
             (let [!color# (atom [::e/pending])]
               (swap! ~!b update :txs replace-or-conj (fn [[_# _# id2#]] (= id# id2#)) [tx# !color# id#])
               (e/watch !color#)))
-          (catch hyperfiddle.electric.Pending e# [::e/pending]))))
+          (catch hyperfiddle.electric.Pending ex# [::e/pending ex#]))))
+
+(defmacro ->unstage-fn [!b]
+  `(e/fn [id#]
+     (e/server (swap! ~!b update :txs #(remove (fn [[_# _# id2#]] (= id# id2#)) %)) nil)))
 
 #?(:clj (defn branch? [v] (instance? clojure.lang.Atom v)))
 
@@ -239,5 +244,31 @@
     % := ::e/pending
     % := ::e/ok
     (count (:txs @@!b)) := 1
+
+    (tap ::done), % := ::done, (println " ok")))
+
+(tests "a tx can be removed from the branch txs"
+  (def uuid (random-uuid))
+  (def !b (atom nil))
+  (def !unstage? (atom false))
+  (with (e/run (try (e/server
+                      (let [conn (->in-memory-conn "commit" schema)
+                            global-db (new (latest-db< conn))
+                            [!branch _branch] (Branch!. global-db conn)]
+                        (reset! !b !branch)
+                        (e/client
+                          (let [Stage! (->stage-fn !branch), Unstage! (->unstage-fn !branch)]
+                            (tap (first (new Stage! [(->task "foo" uuid)] uuid)))
+                            (when (e/watch !unstage?)
+                              (tap [:unstage (new Unstage! uuid)]))))))
+                    (catch hyperfiddle.electric.Pending _)
+                    (catch #?(:clj Throwable :cljs :default) e (prn e))))
+    % := ::e/pending
+    % := ::e/ok
+    (count (:txs @@!b)) := 1
+
+    (reset! !unstage? true)
+    % := [:unstage nil]
+    (count (:txs @@!b)) := 0
 
     (tap ::done), % := ::done, (println " ok")))
