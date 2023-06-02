@@ -26,7 +26,7 @@
      (let [[state# v#] (control "input" #(-> % .-target .-value) identity ~v ~V! dom/set-val)
            color# (if local? "blue" (case state# ::e/init "gray", ::e/ok "green", ::e/pending "yellow", ::e/failed "red"))]
        (dom/style {:border-width "2px", :border-style "solid", :border-color color#, :border-radius "0.2em"})
-       (when local? (dom/props {:disabled true}))
+       #_(when local? (dom/props {:disabled true})) ; why? Not sure
        (case state# ::e/failed (.error js/console v#) nil)
        ~@body)))
 
@@ -58,6 +58,7 @@
 ;;                                                 ::e/failed "red"))}))))
 
 (defmacro checkbox [record V V! EnsureEntity & body]
+  ; (reset! util/*!side-channel* 42)
   `(dom/input (dom/props {:type "checkbox"})
      (let [[state# v#] (control "change" checked identity ~record ~V! #(set! (.-checked %) %2)
                          ~@body)]
