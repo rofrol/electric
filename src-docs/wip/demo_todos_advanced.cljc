@@ -31,9 +31,8 @@
 
 (defonce !conn #?(:clj (init-conn) :cljs nil)) ; database on server
 #?(:clj (comment (alter-var-root #'!conn (fn [_] (init-conn)))))
-(e/def db)
+(e/def db) ; injected database ref; Electric defs are always dynamic
 
-; injected database ref; Electric defs are always dynamic
 (defonce !db #?(:clj (atom nil) :cljs nil))
 ;; singleton database queue polling
 ;; in the future this can be done with `m/signal`
@@ -52,8 +51,7 @@
 #?(:clj (def !fail-rate (atom 1)))
 (e/def fail-rate (e/server (e/watch !fail-rate)))
 
-;; tx with configured latency and fail rate
-#?(:clj (defn tx! [tx]
+#?(:clj (defn tx! "tx with configured latency and fail rate" [tx]
           (m/sp
             (m/? (m/sleep @!latency))
             (if (< (rand-int 10) @!fail-rate)
@@ -77,8 +75,13 @@
 #?(:clj (defn todo-count [db] (count (d/q '[:find [?e ...] :where [?e :task/status :active]] db))))
 
 #?(:clj (defn todo-records [db]
-          (d/q '[:find [(pull ?e [:db/id :task/description :task/status :hf/stable-id]) ...]
-                 :where [?e :task/status]] db)))
+          (->> (d/q '[:find [(pull ?e [:db/id
+                                       :task/description
+                                       :task/status
+                                       :hf/stable-id
+                                       #_:task/order]) ...]
+                      :where [?e :task/status]] db)
+            #_(sort-by :task/order #(compare %2 %1)))))
 
 (def tempid? (some-fn nil? string?))
 
@@ -129,14 +132,11 @@
                                        (let [id (random-uuid)]
                                          {:hf/stable-id id
                                           :task/description input-val
-                                          :task/status :active}))))
+                                          :task/status :active
+                                          #_#_:task/order (e/server (swap! !order-id inc))}))))
                     (m/reductions conj [])
                     new))]
-            (e/client #_e/server   ; fixme
-              ;; we have a local and remote list of records
-              ;; we'd need to diff them on their respective peers and integrate them on the client
-              ;; currently we don't have this functionality so we hack it
-              ;; by sending the whole server collection to the client
+            (e/client #_e/server   ; fixme 
               (e/for-by :hf/stable-id [record (vals (reduce (fn [ac nx] (assoc ac (:hf/stable-id nx) nx))
                                                       (contrib.data/index-by :hf/stable-id optimistic-records)
                                                       (e/server (todo-records db))))]
