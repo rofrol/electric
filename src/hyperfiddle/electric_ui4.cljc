@@ -23,17 +23,6 @@
      ~@body
      (case state# (::e/pending ::e/failed) (throw v#) (::e/init ::e/ok) v#)))
 
-; UI5
-(defmacro control' [event-type parse unparse v V! setter & body]
-  `(let [[state# v#] (e/for-event-pending-switch [e# (e/listen> dom/node ~event-type)]
-                       (some->> (~parse e#) (new ~V!)))]
-     (dom/style {:background-color (when (= ::e/pending state#) "yellow")})
-     ; workaround "when-true" bug: extra outer when-some added to guard a nil from incorrectly sneaking through
-     (when-some [v# (when (and (not (new dom/Focused?)) (#{::e/init ::e/ok} state#)) ~v)]
-       (~setter dom/node (~unparse v#))) ; js coerce
-     ~@body
-     [state# v#]))
-
 (defmacro input [v V! & body]
   `(dom/input
      (control "input" value identity ~v ~V! dom/set-val ~@body)))
