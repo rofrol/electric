@@ -60,14 +60,7 @@
 
 (defmacro checkbox [v V! & body]
   `(dom/input (dom/props {:type "checkbox"})
-     (let [[state# v#] (control' "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)]
-       (dom/style {:outline (str "2px solid " (case state#
-                                                ::e/init "gray"
-                                                ::e/ok "green"
-                                                ::e/pending "yellow"
-                                                ::e/failed "red"))})
-       #_(case state# (::e/pending ::e/failed) (throw v#) (::e/init ::e/ok) v#)))) ; compat, spams exceptions due to interaction between Exceptions and work-skipping
-; exceptions are higher priority than values
+     (control "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)))
 
 (defmacro range [v V! & body]
   `(dom/input (dom/props {:type "range"})

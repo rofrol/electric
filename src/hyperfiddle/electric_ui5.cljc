@@ -35,8 +35,7 @@
      (let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)
            color# (case state# ::e/init "gray", ::e/ok "green", ::e/pending "yellow", ::e/failed "red")]  ; tooltip
        (dom/style {:border (str "2px solid " color#)})
-       (case state# ::e/failed (.error js/console e#) nil)
-       
+       (case state# ::e/failed (.error js/console e#) nil) 
        (binding [local? (tempid? (:db/id ~record))] ;; mark entity local for downstream code
          ~@body))))
 
@@ -48,6 +47,15 @@
 ;;        (when local? (dom/props {:disabled true}))
 ;;        (case state# ::e/failed (.error js/console v#) nil)
 ;;        ~@body)))
+
+;; (defmacro checkbox [v V! & body]
+;;   `(dom/input (dom/props {:type "checkbox"})
+;;      (let [[state# v#] (control' "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)]
+;;        (dom/style {:outline (str "2px solid " (case state#
+;;                                                 ::e/init "gray"
+;;                                                 ::e/ok "green"
+;;                                                 ::e/pending "yellow"
+;;                                                 ::e/failed "red"))}))))
 
 (defmacro checkbox [record V V! EnsureEntity & body]
   `(dom/input (dom/props {:type "checkbox"})
