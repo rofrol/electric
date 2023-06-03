@@ -1,4 +1,4 @@
-(ns wip.demo-todos-advanced
+(ns wip.demo-todos-optimistic
   (:import [hyperfiddle.electric Pending])
   (:require #?(:clj [datomic.api :as d]) ; database on server
             [hyperfiddle.electric :as e]

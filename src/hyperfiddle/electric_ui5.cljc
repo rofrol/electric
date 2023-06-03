@@ -39,6 +39,9 @@
        (binding [local? (tempid? (:db/id ~record))] ;; mark entity local for downstream code
          ~@body))))
 
+#?(:cljs (defn value [^js e] (.-target.value e))) ; workaround inference warnings, todo rename
+#?(:cljs (defn checked [^js e] (.-target.checked e)))
+
 ;; (defmacro checkbox [v V! & body]
 ;;   `(dom/input (dom/props {:type "checkbox"})
 ;;      (let [[state# v#] (control "change" #(-> % .-target .-checked) identity ~v ~V! #(set! (.-checked %) %2))
@@ -48,34 +51,35 @@
 ;;        (case state# ::e/failed (.error js/console v#) nil)
 ;;        ~@body)))
 
-;; (defmacro checkbox [v V! & body]
-;;   `(dom/input (dom/props {:type "checkbox"})
-;;      (let [[state# v#] (control' "change" checked identity ~v ~V! #(set! (.-checked %) %2) ~@body)]
-;;        (dom/style {:outline (str "2px solid " (case state#
-;;                                                 ::e/init "gray"
-;;                                                 ::e/ok "green"
-;;                                                 ::e/pending "yellow"
-;;                                                 ::e/failed "red"))}))))
-
-(defmacro checkbox [record V V! EnsureEntity & body]
-  ; (reset! util/*!side-channel* 42)
+(defmacro checkbox [v V! & body]
   `(dom/input (dom/props {:type "checkbox"})
-     (let [[state# v#] (control "change" checked identity ~record ~V! #(set! (.-checked %) %2)
-                         ~@body)]
+     (let [[state# v#] (control "change" checked identity
+                         ~v ~V! #(set! (.-checked %) %2) ~@body)]
+       (dom/style {:outline (str "2px solid " (case state#
+                                                ::e/init "gray"
+                                                ::e/ok "green"
+                                                ::e/pending "yellow"
+                                                ::e/failed "red"))}))))
 
-       (let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)
-             v# (new ~V e#)
-             color# (case state# 
-                      ::e/init "gray"
-                      ::e/ok "green"
-                      ::e/pending "yellow"
-                      ::e/failed "red")] ; tooltip
-         (dom/style {:outline (str "2px solid " color#)})
+;; (defmacro checkbox [record V V! EnsureEntity & body]
+;;   ; (reset! util/*!side-channel* 42)
+;;   `(dom/input (dom/props {:type "checkbox"})
+;;      (let [[state# v#] (control "change" checked identity ~record ~V! #(set! (.-checked %) %2)
+;;                          ~@body)]
 
-         #_(case state#
-             ::e/pending (dom/text "⌛ " v#)
-             ::e/failed
-             (do (dom/text "💀 " v#)
-               (ui/button (e/fn [] #_(reset! !err nil)) ; retry
-                 (dom/text "⟳")) (dom/text " (" (ex-message v#) ")"))
-             (::e/ok ::e/init) .)))))
+;;        (let [[state# e#] (new ~EnsureEntity (:db/id ~record) ~record)
+;;              v# (new ~V e#)
+;;              color# (case state# 
+;;                       ::e/init "gray"
+;;                       ::e/ok "green"
+;;                       ::e/pending "yellow"
+;;                       ::e/failed "red")] ; tooltip
+;;          (dom/style {:outline (str "2px solid " color#)})
+
+;;          #_(case state#
+;;              ::e/pending (dom/text "⌛ " v#)
+;;              ::e/failed
+;;              (do (dom/text "💀 " v#)
+;;                (ui/button (e/fn [] #_(reset! !err nil)) ; retry
+;;                  (dom/text "⟳")) (dom/text " (" (ex-message v#) ")"))
+;;              (::e/ok ::e/init) .)))))

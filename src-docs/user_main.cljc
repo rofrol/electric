@@ -21,7 +21,7 @@
             user.demo-svg
             user.demo-todos-simple
             wip.demo-todos-advanced-old
-            wip.demo-todos-advanced
+            wip.demo-todos-optimistic
             user.tutorial-7guis-1-counter
             user.tutorial-7guis-2-temperature
             user.tutorial-7guis-4-timer
@@ -83,6 +83,11 @@
       NotFoundPage)))
 
 (e/defn Main []
+  (binding [dom/node js/document.body]
+    (e/server (wip.demo-todos-optimistic/AdvancedTodoList.))))
+
+#_
+(e/defn Main []
   (binding [history/encode contrib.ednish/encode-uri
             history/decode #(or (contrib.ednish/decode-path % hf/read-edn-str)
                                [`user.demo-index/Demos])]
@@ -90,6 +95,5 @@
       (set! (.-title js/document) (str (clojure.string/capitalize (name (first history/route))) " - Hyperfiddle"))
       (binding [dom/node js/document.body]
         (dom/pre (dom/text (contrib.str/pprint-str history/route)))
-        (e/server (wip.demo-todos-advanced/AdvancedTodoList.))
-        #_(let [[page & args] history/route]
+        (let [[page & args] history/route]
           (e/server (new (Pages. page #_args))))))))
