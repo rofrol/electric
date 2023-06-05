@@ -100,6 +100,9 @@
   (xorxs nil #{}) := #{}
   (xorxs nil) := nil)
 
+(defn ->Object "allocate a process-unique identity that cannot collide" []
+  #?(:clj (Object.) :cljs (js/Object.)))
+
 (defn index-by [kf xs]
   {:pre [kf]}
   (into {} (map-indexed (fn [i x]
