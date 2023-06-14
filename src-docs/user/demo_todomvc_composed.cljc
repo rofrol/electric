@@ -24,7 +24,7 @@
     (let [state (e/watch todomvc/!state)
           n (e/server (e/watch !n))]
       (e/server
-        (binding [todomvc/db (e/watch todomvc/!db)
+        (binding [todomvc/db (new (identity todomvc/<db)) ; `identity` call required to resolve class vs. missionary flow ambiguity
                   todomvc/transact! (partial d/transact todomvc/!conn)]
           (e/client
             (dom/link (dom/props {:rel :stylesheet, :href "/todomvc.css"}))

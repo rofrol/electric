@@ -2,9 +2,9 @@
   "Requires -Xss2m to compile. The Electric compiler exceeds the default 1m JVM ThreadStackSize
   due to large macroexpansion resulting in false StackOverflowError during analysis."
   (:require
+   #?(:clj [contrib.datomic :as cd])
    #?(:clj [contrib.datomic-contrib :as dx])
    #?(:clj [datomic.api :as d])
-   [contrib.debug :as dbg]
    contrib.str
    [hyperfiddle.api :as hf]
    [hyperfiddle.electric :as e]
@@ -12,34 +12,6 @@
    [hyperfiddle.electric-ui4 :as ui]
    [missionary.core :as m]))
 
-;;; Datomic plumbing
-#?(:clj
-   (defn next-db< [conn]
-     (let [q (d/tx-report-queue conn)]
-       (m/observe (fn [!]
-                    (! (d/db conn))
-                    (let [t (Thread. ^Runnable
-                              #(when (try (! (:db-after (.take ^java.util.concurrent.LinkedBlockingQueue q)))
-                                          true
-                                          (catch InterruptedException _))
-                                 (recur)))]
-                      (.setDaemon t true)
-                      (.start t)
-                      #(doto t .interrupt .join)))))))
-
-;; Datomic only allows a single queue consumer, so we need to spawn a singleton here
-;; In the next Electric iteration we can use `m/signal` and clean this up
-#?(:clj (defonce !db (atom nil)))
-#?(:clj (defonce !taker nil))
-#?(:clj (defn init-conn [schema]
-          (let [uri "datomic:mem://todomvc-branched"]
-            (d/delete-database uri)
-            (d/create-database uri)
-            (let [conn (d/connect uri)]
-              (d/transact conn schema)
-              (when !taker (!taker))
-              (alter-var-root #'!taker (fn [_] ((m/reduce #(reset! !db %2) nil (next-db< conn)) identity identity)))
-              conn))))
 
 ;; Application
 #?(:clj
@@ -47,9 +19,16 @@
      [{:db/ident :task/status,      :db/valueType :db.type/keyword, :db/cardinality :db.cardinality/one}
       {:db/ident :task/description, :db/valueType :db.type/string,  :db/cardinality :db.cardinality/one}]))
 
-
-#?(:clj (defonce !conn (init-conn schema)))
-#?(:clj (comment (alter-var-root #'!conn (fn [_] (init-conn schema)))))
+(def db-uri "datomic:mem://todomvc-branched")
+;; to clear DB data replace temporarily both with `def`
+#?(:clj (defonce !conn (do (d/delete-database db-uri)
+                           (d/create-database db-uri)
+                           (doto (d/connect db-uri) (d/transact schema)))))
+#?(:clj (defonce <db (->> (m/ap
+                            (m/amb
+                              (d/db !conn)
+                              (:db-after (m/?> (cd/tx-report-queue> !conn)))))
+                       (m/relieve {}) m/signal)))
 
 (e/def db)                                                  ; server
 (def !state #?(:cljs (atom {::filter :all                   ; client
@@ -201,7 +180,7 @@
   (e/client
     (let [state (e/watch !state)]
       (e/server
-        (binding [db (e/watch !db)
+        (binding [db (new (identity <db)) ; `identity` call required to resolve class vs. missionary flow ambiguity
                   hf/Transact! (e/fn [tx] (d/transact !conn tx))]
           (binding [hf/schema (new (dx/schema> db))
                     hf/into-tx' hf/into-tx
