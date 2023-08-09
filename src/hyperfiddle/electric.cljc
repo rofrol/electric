@@ -212,6 +212,14 @@ executors are allowed (i.e. to control max concurrency, timeouts etc). Currently
 
 (hyperfiddle.electric/def system-time-secs "seconds since 1970 Jan 1" (/ system-time-ms 1000.0))
 
+(hyperfiddle.electric/def Fix
+  (let [D (::c/closure
+           (let [W c/%0]
+             (::c/closure
+              (let [F c/%0]
+                (new F (::c/closure (new (new (new W W) F) c/%0)))))))]
+    (new D D)))
+
 (cc/defn -check-varargs-arity [provided actual fname]
   (when (< provided actual)
     (throw (ex-info (str "You called varargs " (or fname "<unnamed-efn>") " with " provided

@@ -2328,3 +2328,29 @@
     % := :two)
   (with (e/run (tap (e/apply (e/fn ([_]) ([_ & xs] (mapv inc xs))) 1 2 [3 4])))
     % := [3 4 5]))
+
+(tests
+  (e/defn Fac [Recur]
+    (e/fn [x]
+      (case x
+        0 1
+        (* x (Recur. (dec x))))))
+  (e/defn NormalFac [x]
+    (case x
+      0 1
+      (* x (recur (dec x)))))
+  (e/def FixedFac
+    (e/Fix. (e/fn [FixedFac]
+              (e/fn [x]
+                (case x
+                  0 1
+                  (* x (FixedFac. (dec x))))))))
+
+  (with (e/run (tap (new (e/Fix. Fac) 15)))
+    % := 1307674368000)
+
+  (with (e/run (tap (NormalFac. 15)))
+    % := 1307674368000)
+
+  (with (e/run (tap (FixedFac. 15)))
+    % := 1307674368000))
