@@ -41,7 +41,7 @@
         (throw (ex-info "No message received after specified time" {::type ::timeout, ::time-seconds (int (/ time 1000))})))
       (recur))))
 
-(def ELECTRIC-SERVER-CONNECTION-TIMEOUT 59000) ; https://www.notion.so/hyperfiddle/electric-server-heartbeat-issues-4243f981954c419f8eb0785e8e789fb7?pvs=4
+(def ELECTRIC-SERVER-CONNECTION-TIMEOUT 120000)
 
 (defn electric-ws-adapter
   "Start and manage an Electric server process hooked onto a websocket."
