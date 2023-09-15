@@ -22,7 +22,7 @@
 (def shadow-watch (delay @(requiring-resolve 'shadow.cljs.devtools.api/watch)))
 (def shadow-compile (delay @(requiring-resolve 'shadow.cljs.devtools.api/compile)))
 (def shadow-release (delay @(requiring-resolve 'shadow.cljs.devtools.api/release)))
-(def start-electric-server! (delay @(requiring-resolve 'electric-server-java8-jetty9/start-server!)))
+(def start-electric-server! (delay @(requiring-resolve 'electric-server-httpkit/start-server!)))
 (def rcf-enable! (delay @(requiring-resolve 'hyperfiddle.rcf/enable!)))
 
 (defn rcf-shadow-hook {:shadow.build/stages #{:compile-prepare :compile-finish}}
@@ -37,7 +37,7 @@
                                   :compile-finish (@rcf-enable!))
                                 build-state))))
 
-(def electric-server-config {:host "0.0.0.0", :port 8080, :resources-path "public", :manifest-path "public/js/manifest.edn"})
+(def electric-server-config {:ip "0.0.0.0", :port 8080, :resources-path "public", :manifest-path "public/js/manifest.edn"})
 
 (defn main [& args]
   (println "Starting Electric compiler and server...")
