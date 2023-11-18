@@ -91,6 +91,10 @@
       (dbg/error (assoc (select-debug-info debug-info) ::dbg/args [thrown]) (Failure. error) context))
     (dbg/error (assoc (select-debug-info debug-info) ::dbg/args args) (Failure. error))))
 
+(defn clear-stack-trace [e]
+  #?(:clj (doto e (.setStackTrace (into-array StackTraceElement [])))
+     :cljs (do (set! (.-stack e) nil) e)))
+
 (defn latest-apply [debug-info & args]
   (apply m/latest
          (fn [f & args]
@@ -98,7 +102,8 @@
              (dbg/error (assoc (select-debug-info debug-info) ::dbg/args args) err)
              (try (apply f args)
                   (catch #?(:clj Throwable :cljs :default) e
-                    (handle-apply-error debug-info args e)))))
+                    (handle-apply-error debug-info args
+                      (clear-stack-trace e))))))
          args))
 
 (def latest-first
@@ -129,7 +134,7 @@
         (#?(:clj invoke :cljs -invoke) [_] (it))
         IDeref
         (#?(:clj deref :cljs -deref) [_]
-          (try @it (catch Cancelled e (Failure. e))))))))
+          (try @it (catch Cancelled e (Failure. (clear-stack-trace e)))))))))
 
 (defn signal [<x]
   (m/signal! (lift-cancelled <x)))

@@ -9,6 +9,8 @@
            [java.nio ByteBuffer]
            [org.eclipse.jetty.websocket.api Session WebSocketAdapter]))
 
+(def empty-stack-trace (into-array StackTraceElement []))
+
 (defn failure [^WebSocketAdapter ws ^Throwable e]
   (if (instance? Cancelled e)
     (log/debug "Websocket handler completed gracefully.")
@@ -17,9 +19,10 @@
       (let [{::keys [type time-seconds] :as data} (ex-data e)]
         (case type
           ::timeout (do (log/info (format "Connection to client lost after %ss. Closing socket." time-seconds))
-                        (.close s 1013 "Try again later"))
-          (do (log/error e "Websocket handler failure." data)
-              (.close s 1011 "Server process crash")))))))
+                      (.close s 1013 "Try again later"))
+          (do (log/error (doto e (.setStackTrace empty-stack-trace)) ; clear unhelpful trace of electric runtime internals
+                (str "Websocket handler failure, type: " type) data)
+            (.close s 1011 "Server process crash")))))))
 
 (defn write-msg
   "Return a task, writing a message on a websocket when run."
@@ -73,7 +76,10 @@
                        (log/debug "Client disconnected for an unexpected reason." status))
                      ((aget state on-close-slot))))
      :on-error   (fn on-error [ws err]
-                   (log/error err "Websocket error"))
+                   ; todo: should we match recognized errors?
+                   (log/info ; don't report routine events at ERROR level
+                     (doto err (.setStackTrace empty-stack-trace)) ; e.g. org.eclipse.jetty.io.EofException: null
+                     "Websocket error"))
      :on-ping    (fn on-ping [^WebSocketAdapter ws bytebuffer] ; Send pong and keep connection alive.
                    (.sendPong (.getRemote (.getSession ws)) bytebuffer)
                    (keepalive-mailbox nil))
