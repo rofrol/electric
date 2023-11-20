@@ -155,7 +155,9 @@
      (if-some [[node form & bs] bs]
        (let [init (analyze-me env form)
              inst (rec (update env ::index update (::current env) (fnil inc 0)) bs (conj ns node))]
-         (causal-publish init inst node))
+         (if (::non-causal env)
+           (cond-> (ir/pub init inst) node (assoc ::form node))
+           (causal-publish init inst node)))
        (reduce-kv (fn [res i n]
                     (if-some [qualified-sym (find-node-signifier n env)]
                       (ir/bind (signifier->node qualified-sym env) (- (count ns) i) res)
@@ -387,17 +389,22 @@
           (let*) ((fn rec [env bs]
                     (if-some [[s i & bs] bs]
                       (let [v (analyze-me env i)]
-                        (cond-> (causal-publish v (rec (with-local env s v) bs) s)
+                        (cond-> (if (::non-causal env)
+                                  (cond-> (ir/pub v (rec (with-local env s v) bs)) s (assoc ::form s))
+                                  (causal-publish v (rec (with-local env s v) bs) s))
                           (::ir/tag v) (assoc ::ir/tag (::ir/tag v))))
                       (analyze-me env (cons `do (next args)))))
                   env (seq (first args)))
 
-          (do) (if-some [[x & xs] args]
-                 ((fn rec [x xs]
-                    (let [r (analyze-me env x)]
-                      (if-some [[y & ys] xs]
-                        (causal r (rec y ys))
-                        r)))  x xs)
+          (do) (if (seq args)
+                 (if (::non-causal env)
+                   (apply ir/apply (ir/eval `r/last-arg)
+                     (eduction (map #(analyze-me env %)) args))
+                   ((fn rec [x xs]
+                      (let [r (analyze-me env x)]
+                        (if-some [[y & ys] xs]
+                          (causal r (rec y ys))
+                          r)))  (first args) (next args)))
                  (ir/literal nil))
 
           (case) (analyze-case env (first args) (rest args))

@@ -2129,3 +2129,25 @@
      (some? (find-var `ServerOnly_hf_client_server)) := true
      (not (find-var `ServerOnly_hf_server_client)) := true
      (not (find-var `ServerOnly_hf_client_client)) := true))
+
+(tests "::lang/non-causal removes causality in `let`"
+  (l/defn ^::lang/non-causal NonCausalLet [tap]
+    (let [_ (tap 1)] (tap 2)))
+  (with ((l/local (NonCausalLet. tap)) tap tap)
+    ;; % := 1
+    % := 2))
+
+(tests "::lang/non-causal removes causality in `binding`"
+  (l/def NonCausalEDef)
+  (l/defn ^::lang/non-causal NonCausalBinding [tap]
+    (binding [NonCausalEDef (tap 1)] (tap 2)))
+  (with ((l/local (NonCausalBinding. tap)) tap tap)
+    ;; % := 1
+    % := 2))
+
+;; this returns 2 1 3 in both old and new impl, interesting
+(tests "::lang/non-causal removes causality in `do`"
+  (l/defn ^::lang/non-causal NonCausalDo [tap]
+    (tap 1) (tap 2) (tap 3))
+  (with ((l/local (NonCausalDo. tap)) tap tap)
+    (hash-set % % %) := #{1 2 3}))

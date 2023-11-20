@@ -1177,3 +1177,12 @@
 (defn case-default-throw [v] (throw (new #?(:clj IllegalArgumentException :cljs js/Error) (str "No matching clause: " v))))
 (defn pick-case-branch [picker-map v default-branch & branches]
   (if-some [i (picker-map v)] (nth branches i) default-branch))
+
+(defn last-arg
+  ([a] a)
+  ([_ b] b)
+  ([_ _ c] c)
+  ([_ _ _ d] d)
+  ([_ _ _ _ e] e)
+  ([_ _ _ _ _ f] f)
+  ([_ _ _ _ _ _ & more] (last more)))
