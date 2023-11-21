@@ -49,7 +49,7 @@ cursor `offset`"
               load-n front] ; load right-most element
           #_(println 'forward front '-> target 'load-n load-n 'evict-n evict-n)
           (<buffer evict-n {} nil)
-          (<buffer load-n {} (get log load-n))
+          (<buffer load-n {} (log load-n)) ; assumes contiguous
           (inc front))
 
         (= front target) ; caught up
@@ -60,7 +60,7 @@ cursor `offset`"
               load-n (dec (- front limit))] ; load right-most element
           #_(println 'backward front '-> target 'load-n load-n 'evict-n evict-n)
           (<buffer evict-n {} nil)
-          (<buffer load-n {} (get log load-n))
+          (<buffer load-n {} (log load-n))
           (dec front))))))
 
 (tests
