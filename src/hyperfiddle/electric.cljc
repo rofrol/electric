@@ -89,7 +89,9 @@
   [& body]
   `((local ~@body) (cc/fn [_#]) (cc/fn [_#])))
 
-(cc/defn failure? [x] (instance? Failure x))
+(cc/defn failure? [x] (instance? Failure x)) ; private
+(cc/defn pending? [x] (and (failure? x) (instance? Pending (.-error x)))) ; private
+(cc/defn cancelled? [x] (and (failure? x) (instance? Cancelled (.-error x)))) ; private
 
 #?(:clj
    (cc/defn -offload-task [thunk executor]
