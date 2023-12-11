@@ -2165,3 +2165,6 @@
 (tests "binding in interop fn"
   (with ((l/local (tap ((fn [] (binding [*out* nil] 1))))) tap tap)
     % := 1))
+
+(tests "r/causal"
+  (l/def ^::lang/pprint-source CAUSAL (let [x 1, y 2] (+ x y))))

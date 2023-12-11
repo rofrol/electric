@@ -12,6 +12,7 @@
             [clojure.string :as str]
             [contrib.data :as data]
             [contrib.assert :as ca]
+            #?(:clj [dom-top.core :refer [loopr]])
             [hyperfiddle.electric.impl.ir-utils :as ir-utils])
   (:import missionary.Cancelled
            (hyperfiddle.electric Failure Pending Remote)
@@ -68,8 +69,6 @@
   ;; See `handle-apply-error`.
   (throw exception))
 
-(def failure (some-fn #(when (instance? Failure %) %)))
-
 (def pending (Failure. (Pending.)))
 
 (defn error [^String msg] ; Could be ex-info (ExceptionInfo inherits Error or js/Error)
@@ -91,19 +90,81 @@
 (defn handle-apply-error [debug-info args error]
   (if (= `fail (::dbg/name debug-info))
     (let [[thrown context] args]
-      (dbg/error (assoc (select-debug-info debug-info) ::dbg/args [thrown]) (Failure. error) context))
-    (dbg/error (assoc (select-debug-info debug-info) ::dbg/args args) (Failure. error))))
+      (dbg/error (assoc debug-info ::dbg/args [thrown]) (Failure. error) context))
+    (dbg/error (assoc debug-info ::dbg/args args) (Failure. error))))
 
-(defn latest-apply [debug-info & args]
-  (ca/check (partial every? some?) args debug-info)
-  (apply m/latest
-    (fn [f & args]
-      (if-let [err (apply failure f args)]
-        (dbg/error (assoc (select-debug-info debug-info) ::dbg/args args) err)
-        (try (apply f args)
-             (catch #?(:clj Throwable :cljs :default) e
-               (handle-apply-error debug-info args e)))))
-    args))
+(defn failure [args] (some #(when (instance? Failure %) %) args))
+
+(defn -latest-impl [fail argvec debug-info thunk]
+  (if fail
+    (dbg/error (assoc debug-info ::dbg/args argvec) fail)
+    (try (thunk)
+         (catch #?(:clj Throwable :cljs :default) e
+           (handle-apply-error debug-info argvec e)))))
+
+#?(:clj
+   (let [argseq (sequence (map #(symbol (str "x" %))) (range))
+         pure? (fn pure? [form] (and (seq? form) (= `pure (first form))))
+         unpure second]
+     (defn ->latest-apply [debug-info forms]
+       (let [[forms* form _syms syms-used args]
+             (loopr [forms* [], form [], syms argseq, syms-used [], args []]
+               [arg forms]
+               (if (pure? arg)
+                 (let [v (unpure arg)] (recur forms* (conj form v) syms syms-used (conj args v)))
+                 (let [[s & ss] syms] (recur (conj forms* arg) (conj form s) ss (conj syms-used s) (conj args s)))))]
+         (when (> (count syms-used) 20)
+           (prn forms))
+         `(m/latest (fn ~syms-used (let [~'argvec ~args]
+                                     (-latest-impl (failure ~syms-used) ~'argvec '~debug-info #(~@form))))
+            ~@forms*)))
+
+     (tests
+       (->latest-apply {} `[(pure +) (pure 1) (sub 1)])
+       := `(m/latest (fn [~'x0] (let [~'argvec [+ 1 ~'x0]]
+                                  (-latest-impl (failure [~'x0]) ~'argvec '{} #(+ 1 ~'x0))))
+             (sub 1)))))
+
+(defn causal [debug-info a b]
+  (m/latest (fn [x y]
+              (let [args [x y]]
+                (if-some [err (failure args)]
+                  (dbg/error (assoc debug-info ::dbg/args args) err)
+                  (try ({} x y)
+                       (catch #?(:clj Throwable :cljs :default) e
+                         (handle-apply-error debug-info args e))))))
+    a b))
+
+#?(:clj
+   (let [argseq (sequence (map #(symbol (str "x" %))) (range))]
+     (defn ->latest-apply2 [debug-info insts]
+       ;; (prn '===)
+       ;; (prn :insts (mapv ir-utils/unwrite insts))
+       (if (and (= 3 (count insts)) (= (ir/eval '{}) (first insts)))
+         [`(causal '~debug-info) (next insts)]
+         (let [[nonevals form _syms syms-used]
+               (loopr [nonevals [], form [], syms argseq, syms-used []]
+                 [inst insts]
+                 (if (= ::ir/eval (::ir/op inst))
+                   (do #_(prn :folding (::ir/form inst)) (let [v (::ir/form inst)] (recur nonevals (conj form v) syms syms-used)))
+                   (let [[s & ss] syms] (recur (conj nonevals inst) (conj form s) ss (conj syms-used s)))))]
+           (when (> (count syms-used) 20)
+             (prn insts))
+           ;; (pp/pprint `(m/latest (fn ~syms-used
+           ;;                         (let [~'argvec ~form]
+           ;;                           (-latest-impl (failure ~syms-used) ~'argvec '~debug-info #(~@form))))))
+           ;; (prn :left (mapv ir-utils/unwrite nonevals))
+           [(if (seq nonevals)
+              `(m/latest (fn ~syms-used (let [~'argvec ~form]
+                                          (-latest-impl (failure ~syms-used) ~'argvec '~debug-info #(~@form)))))
+              `(pure (~@form)))
+            nonevals])))
+
+     (tests
+       (->latest-apply2 {} [(ir/eval `+) (ir/eval 1) (ir/sub 1)])
+       := [`(m/latest (fn [~'x0] (let [~'argvec [+ 1 ~'x0]]
+                                   (-latest-impl (failure [~'x0]) ~'argvec '{} #(+ 1 ~'x0)))))
+           [(ir/sub 1)]])))
 
 (def latest-first
   (partial m/latest
@@ -690,7 +751,7 @@
     (aset ^objects (aget frame frame-slot-variables) (int slot)
       (m/signal!
         (m/cp (try (let [<x (m/?< <<x)]
-                     (cond (failure <x) <x
+                     (cond (instance? Failure <x) <x
                            (nil? <x)    (Failure. (ex-info "called `new` on nil" {}))
                            :else        (m/?< (with tier <x))))
                    (catch #?(:clj Throwable :cljs :default) e
@@ -915,250 +976,254 @@
   #?(:clj (when jvm-hint (vary-meta sym assoc :tag jvm-hint))
      :cljs (when js-hint (vary-meta sym assoc :tag js-hint))))
 
-(defn compile [prefix inst e]
-  (let [nodes (find-nodes inst)
-        inst (remove-dep-nodes inst)
-        frame (sym prefix 'frame)
-        vars (sym prefix 'vars)
-        ctor-at (fn [i] (sym prefix 'ctor i))
-        expr-at (fn [i] (sym prefix 'expr i))
-        restore-free (fn [env free]
-                       (reduce-kv (fn [env i f] (assoc env f (list `aget (sym prefix 'env) i))) env free))
-        capture-free (fn [env free]
-                       `(doto (object-array ~(count free))
-                          ~@(eduction (map-indexed (fn [i f] (list `aset i (env f)))) free)))
-        emit-exprs (fn [exprs]
-                     (list `fn [frame vars (tag-sym (sym prefix 'env) "[Ljava.lang.Object;" nil)]
-                       (list `let
-                         (into [] (comp (map-indexed (fn [i expr] [(expr-at i) expr])) cat) (pop exprs))
-                         (peek exprs))))
-        update-current (fn [ctors f & args] (conj (pop ctors) (apply f (peek ctors) args)))
-        from-last-expr (fn [exprs f & args] (conj exprs (apply f (expr-at (dec (count exprs))) args)))
-        add-many (fn [ctors env args]
-                   (reduce
-                     (fn [[ctors args] arg]
-                       (let [ctors (arg ctors env)]
-                         [ctors (conj args (expr-at (dec (count (peek ctors)))))]))
-                     [ctors []] args))]
-    (-> ((fn walk [env off idx dyn inst]
-           (case (::ir/op inst)
-             ::ir/nop (update env :stack conj (fn [ctors _env] (update-current ctors conj nil)))
-             ::ir/sub (let [p (- idx (::ir/index inst))]
-                        (if (< p off)
-                          (let [f (:static env)
-                                i (f p (count f))]
-                            (-> env
-                              (update :free conj p)
-                              (assoc :static (assoc f p i))
-                              (update :stack conj (fn [ctors _env]
-                                                    (update-current ctors conj `(static ~frame ~i))))))
-                          (update env :stack conj (fn [ctors env] (update-current ctors conj (env p))))))
-             ::ir/pub (-> env
-                        (walk off idx dyn (::ir/init inst))
-                        (walk off (inc idx) dyn (::ir/inst inst))
-                        (update :stack collapse 2 (fn [form cont idx]
-                                                    (fn [ctors env]
-                                                      (let [ctors (form ctors env)]
-                                                        (-> ctors
-                                                          (update-current from-last-expr (fn [x] `(signal ~x)))
-                                                          (cont (assoc env idx (expr-at (count (peek ctors)))))))))
-                          idx))
-             ::ir/do  (let [deps (::ir/deps inst)]
-                        (-> (reduce (fn [env arg] (walk env off idx dyn arg)) env deps)
-                          (update :stack collapse (count deps) vector)
-                          (walk off idx dyn (::ir/inst inst))
-                          (update :stack collapse 2 (fn [deps form]
-                                                      (fn [ctors env]
-                                                        (let [[ctors deps] (add-many ctors env deps)]
-                                                          (-> ctors
-                                                            (update-current conj `(make-input ~frame ~deps))
-                                                            (form env))))))))
-             ::ir/def (let [symb (::ir/slot inst)]
-                        (-> env
-                          (update :stack conj (fn [ctors _env]
-                                                (update-current ctors conj `(pure (inject '~symb)))))))
-             ::ir/lift (-> env
-                         (walk off idx dyn (::ir/init inst))
-                         (update :stack collapse 1 (fn [f]
-                                                     (fn [ctors env]
-                                                       (-> ctors
-                                                         (f env)
-                                                         (update-current from-last-expr (fn [x] `(pure ~x))))))))
-             ::ir/eval (update env :stack conj (fn [ctors _env]
-                                                 (update-current ctors conj `(pure ~(::ir/form inst)))))
-             ::ir/node (let [symb (::ir/slot inst)]
-                         (if (dyn symb)
-                           (update env :stack conj (fn [ctors _env]
-                                                     (update-current ctors conj `(get (deref ~vars) '~symb))))
-                           (let [d (:dynamic env)
-                                 i (d symb (count d))]
-                             (-> env
-                               (assoc :dynamic (assoc d symb i))
-                               (update :stack conj
-                                 (fn [ctors _env]
-                                   (update-current ctors conj
-                                     `(dynamic ~frame '~symb '~(assoc (select-debug-info inst)
-                                                                 ::dbg/sym symb, ::dbg/slot i)))))))))
-             ::ir/bind (let [v (::ir/slot inst)]
-                         (-> env
-                           (walk off idx (conj dyn v) (::ir/inst inst))
-                           (update :stack collapse 1
-                             (fn [form symb idx]
-                               (fn [ctors env]
-                                 (-> ctors
-                                   (update-current conj `(get (deref ~vars) '~symb) `(swap! ~vars assoc '~symb ~(env idx)))
-                                   (form env)
-                                   (update-current conj `(swap! ~vars assoc '~symb ~(expr-at (count (peek ctors)))))
-                                   (update-current (fn [exprs] (conj exprs (expr-at (- (count exprs) 2))))))))
-                             v (- idx (::ir/index inst)))))
-             ::ir/apply (let [f (::ir/fn inst)
-                              args (::ir/args inst)]
-                          (-> (reduce (fn [env inst] (walk env off idx dyn inst)) env (cons f args))
-                            (update :stack collapse (inc (count args))
-                              (fn [& forms]
-                                (fn [ctors env]
-                                  (let [[ctors forms] (add-many ctors env forms)]
-                                    (update-current ctors conj
-                                      `(latest-apply
-                                         '~(select-debug-info (loop [f f]
-                                                                (case (::ir/op f)
-                                                                  ::ir/global (assoc f ::dbg/type :apply, ::dbg/name (symbol (::ir/name f)))
-                                                                  ::ir/node (assoc f ::dbg/type :apply)
-                                                                  ::ir/eval (cond-> (assoc f ::dbg/type :eval)
-                                                                              (not (::dbg/fn f)) (assoc ::dbg/fn (::ir/form f)))
-                                                                  ::ir/sub (assoc f ::dbg/type :apply)
-                                                                  ::ir/input (assoc f ::dbg/type :apply)
-                                                                  ::ir/apply (recur (::ir/fn f))
-                                                                  {::dbg/type :unknown-apply, :op f})))
-                                         ~@forms))))))))
-             ::ir/input (let [deps (::ir/deps inst)]
-                          (-> (reduce (fn [env arg] (walk env off idx dyn arg)) env deps)
-                            (update :stack collapse (count deps) vector)
-                            (update :input inc)
-                            (update :stack collapse 1
-                              (fn [deps]
-                                (fn [ctors env]
-                                  (let [[ctors deps] (add-many ctors env deps)]
-                                    (update-current ctors conj `(input-spawn ~frame ~deps))))))))
-             ::ir/output (-> env
+#?(:clj
+   (defn compile [prefix inst e]
+     (let [nodes (find-nodes inst)
+           inst (remove-dep-nodes inst)
+           frame (sym prefix 'frame)
+           vars (sym prefix 'vars)
+           ctor-at (fn [i] (sym prefix 'ctor i))
+           expr-at (fn [i] (sym prefix 'expr i))
+           restore-free (fn [env free]
+                          (reduce-kv (fn [env i f] (assoc env f (list `aget (sym prefix 'env) i))) env free))
+           capture-free (fn [env free]
+                          `(doto (object-array ~(count free))
+                             ~@(eduction (map-indexed (fn [i f] (list `aset i (env f)))) free)))
+           emit-exprs (fn [exprs]
+                        (list `fn [frame vars (tag-sym (sym prefix 'env) "[Ljava.lang.Object;" nil)]
+                          (list `let
+                            (into [] (comp (map-indexed (fn [i expr] [(expr-at i) expr])) cat) (pop exprs))
+                            (peek exprs))))
+           update-current (fn [ctors f & args] (conj (pop ctors) (apply f (peek ctors) args)))
+           from-last-expr (fn [exprs f & args] (conj exprs (apply f (expr-at (dec (count exprs))) args)))
+           add-many (fn [ctors env args]
+                      (reduce
+                        (fn [[ctors args] arg]
+                          (let [ctors (arg ctors env)]
+                            [ctors (conj args (expr-at (dec (count (peek ctors)))))]))
+                        [ctors []] args))]
+       (-> ((fn walk [env off idx dyn inst]
+              (case (::ir/op inst)
+                ::ir/nop (update env :stack conj (fn [ctors _env] (update-current ctors conj nil)))
+                ::ir/sub (let [p (- idx (::ir/index inst))]
+                           (if (< p off)
+                             (let [f (:static env)
+                                   i (f p (count f))]
+                               (-> env
+                                 (update :free conj p)
+                                 (assoc :static (assoc f p i))
+                                 (update :stack conj (fn [ctors _env]
+                                                       (update-current ctors conj `(static ~frame ~i))))))
+                             (update env :stack conj (fn [ctors env] (update-current ctors conj (env p))))))
+                ::ir/pub (-> env
                            (walk off idx dyn (::ir/init inst))
-                           (snapshot :output)
-                           (update :output inc)
-                           (update :stack collapse 2
-                             (fn [form slot]
-                               (fn [ctors env]
-                                 (-> ctors
-                                   (form env)
-                                   (update-current from-last-expr
-                                     (fn [x] `(make-output ~slot (check-failure '~(select-debug-info inst) ~x)))))))))
-             ::ir/variable (-> env
-                             (walk off idx dyn (::ir/init inst))
-                             (update :variable inc)
-                             (update :stack collapse 1
-                               (fn [form]
-                                 (fn [ctors env]
-                                   (-> ctors
-                                     (form env)
-                                     (update-current from-last-expr (fn [x] (list `variable frame vars x))))))))
-             ::ir/source (-> env
-                           (update :source inc)
-                           (update :stack conj (fn [ctors _env]
-                                                 (update-current ctors conj (list `source frame vars)))))
-             ::ir/constant (-> env
-                             (merge empty-frame)
-                             (walk idx idx #{} (::ir/init inst))
-                             (snapshot (comp vec :free))
-                             (snapshot (comp reverse-index :static))
-                             (snapshot (comp reverse-index :dynamic))
-                             (snapshot :variable)
-                             (snapshot :source)
-                             (snapshot :constant)
-                             (snapshot :target)
-                             (snapshot :output)
-                             (snapshot :input)
-                             (update :free (partial into (:free env) (filter #(< % off))))
-                             (merge (select-keys env (keys (dissoc empty-frame :free))))
-                             (update :constant inc)
-                             (update :stack collapse 10
-                               (fn [form free static dynamic variable-count source-count constant-count target-count output-count input-count]
-                                 (fn [ctors env]
-                                   (let [exprs (peek ctors)
-                                         ctors (-> (pop ctors)
-                                                 (conj [])
-                                                 (form (restore-free env free)))]
-                                     (-> ctors
-                                       (update-current from-last-expr
-                                         (fn [x] `(check-failure '~(select-debug-info inst) ~x)))
-                                       (update-current
-                                         (fn [exprs]
-                                           (list `constructor (list 'quote dynamic)
-                                             variable-count source-count
-                                             constant-count target-count
-                                             output-count input-count
-                                             (emit-exprs exprs))))
-                                       (conj exprs)
-                                       (update-current conj
-                                         (list `constant frame
-                                           (list (ctor-at (dec (count ctors)))
-                                             (capture-free env free) (mapv env static))))))))))
-             ::ir/target (let [deps (::ir/deps inst)]
-                           (-> (reduce (fn [env inst] (walk env idx idx #{} inst))
-                                 (merge env empty-frame) deps)
+                           (walk off (inc idx) dyn (::ir/inst inst))
+                           (update :stack collapse 2 (fn [form cont idx]
+                                                       (fn [ctors env]
+                                                         (let [ctors (form ctors env)]
+                                                           (-> ctors
+                                                             (update-current from-last-expr (fn [x] `(signal ~x)))
+                                                             (cont (assoc env idx (expr-at (count (peek ctors)))))))))
+                             idx))
+                ::ir/do  (let [deps (::ir/deps inst)]
+                           (-> (reduce (fn [env arg] (walk env off idx dyn arg)) env deps)
                              (update :stack collapse (count deps) vector)
-                             (snapshot (comp vec :free))
-                             (snapshot (comp reverse-index :static))
-                             (snapshot (comp reverse-index :dynamic))
-                             (snapshot :variable)
-                             (snapshot :source)
-                             (snapshot :constant)
-                             (snapshot :target)
-                             (snapshot :output)
-                             (snapshot :input)
-                             (update :free (partial into (:free env) (filter #(< % off))))
-                             (merge (select-keys env (keys (dissoc empty-frame :free))))
-                             (update :target inc)
-                             (update :stack collapse 10
-                               (fn [deps free static dynamic variable-count source-count constant-count target-count output-count input-count]
-                                 (fn [ctors env]
-                                   (let [exprs (peek ctors)
-                                         [ctors deps] (-> (pop ctors)
-                                                        (conj [])
-                                                        (add-many (restore-free env free) deps))]
-                                     (-> ctors
-                                       (update-current conj `(make-input ~frame ~deps))
-                                       (update-current
-                                         (fn [exprs]
-                                           (list `constructor (list 'quote dynamic)
-                                             variable-count source-count
-                                             constant-count target-count
-                                             output-count input-count
-                                             (emit-exprs exprs))))
-                                       (conj exprs)
-                                       (update-current conj
-                                         (list `target frame
-                                           (list (ctor-at (dec (count ctors)))
-                                             (capture-free env free) (mapv env static)))))))))))
-             (throw (ex-info (str "unknown instruction: " inst) {:inst inst}))))
-         empty-frame 0 0 #{} inst)
-      (snapshot (comp reverse-index :dynamic))
-      (snapshot :variable)
-      (snapshot :source)
-      (snapshot :constant)
-      (snapshot :target)
-      (snapshot :output)
-      (snapshot :input)
-      (:stack)
-      (collapse 8
-        (fn [form dynamic nvariable nsource nconstant ntarget noutput ninput]
-          (let [code (let [ctors (form [[]] {})]
-                       (list `let (into [] (comp (map-indexed (fn [i ctor] [(ctor-at i) ctor])) cat) (pop ctors))
-                         (emit-exprs (peek ctors))))]
-            (when (::lang/pprint-source e)
-              (println "---" prefix "SOURCE ---")
-              (pp/pprint code))
-            {:fn code, :dynamic `'~dynamic, :nvariable nvariable :nsource nsource, :get-used-nodes `(fn [] ~nodes)
-             :nconstant nconstant, :ntarget ntarget, :noutput noutput, :ninput ninput})))
-      (peek))))
+                             (walk off idx dyn (::ir/inst inst))
+                             (update :stack collapse 2 (fn [deps form]
+                                                         (fn [ctors env]
+                                                           (let [[ctors deps] (add-many ctors env deps)]
+                                                             (-> ctors
+                                                               (update-current conj `(make-input ~frame ~deps))
+                                                               (form env))))))))
+                ::ir/def (let [symb (::ir/slot inst)]
+                           (-> env
+                             (update :stack conj (fn [ctors _env]
+                                                   (update-current ctors conj `(pure (inject '~symb)))))))
+                ::ir/lift (-> env
+                            (walk off idx dyn (::ir/init inst))
+                            (update :stack collapse 1 (fn [f]
+                                                        (fn [ctors env]
+                                                          (-> ctors
+                                                            (f env)
+                                                            (update-current from-last-expr (fn [x] `(pure ~x))))))))
+                ::ir/eval (update env :stack conj (fn [ctors _env]
+                                                    (update-current ctors conj `(pure ~(::ir/form inst)))))
+                ::ir/node (let [symb (::ir/slot inst)]
+                            (if (dyn symb)
+                              (update env :stack conj (fn [ctors _env]
+                                                        (update-current ctors conj `(get (deref ~vars) '~symb))))
+                              (let [d (:dynamic env)
+                                    i (d symb (count d))]
+                                (-> env
+                                  (assoc :dynamic (assoc d symb i))
+                                  (update :stack conj
+                                    (fn [ctors _env]
+                                      (update-current ctors conj
+                                        `(dynamic ~frame '~symb '~(assoc (select-debug-info inst)
+                                                                    ::dbg/sym symb, ::dbg/slot i)))))))))
+                ::ir/bind (let [v (::ir/slot inst)]
+                            (-> env
+                              (walk off idx (conj dyn v) (::ir/inst inst))
+                              (update :stack collapse 1
+                                (fn [form symb idx]
+                                  (fn [ctors env]
+                                    (-> ctors
+                                      (update-current conj `(get (deref ~vars) '~symb) `(swap! ~vars assoc '~symb ~(env idx)))
+                                      (form env)
+                                      (update-current conj `(swap! ~vars assoc '~symb ~(expr-at (count (peek ctors)))))
+                                      (update-current (fn [exprs] (conj exprs (expr-at (- (count exprs) 2))))))))
+                                v (- idx (::ir/index inst)))))
+                ::ir/apply (let [f (::ir/fn inst), args (::ir/args inst)
+                                 [latest-fn insts]
+                                 (->latest-apply2 (select-debug-info (loop [f f]
+                                                                       (case (::ir/op f)
+                                                                         ::ir/global (assoc f ::dbg/type :apply, ::dbg/name (symbol (::ir/name f)))
+                                                                         ::ir/node (assoc f ::dbg/type :apply)
+                                                                         ::ir/eval (cond-> (assoc f ::dbg/type :eval)
+                                                                                     (not (::dbg/fn f)) (assoc ::dbg/fn (::ir/form f)))
+                                                                         ::ir/sub (assoc f ::dbg/type :apply)
+                                                                         ::ir/input (assoc f ::dbg/type :apply)
+                                                                         ::ir/apply (recur (::ir/fn f))
+                                                                         {::dbg/type :unknown-apply, :op f})))
+                                   (cons f args))]
+                             (if (seq insts)
+                               (-> (reduce (fn [env inst] (walk env off idx dyn inst)) env insts)
+                                 (update :stack collapse (count insts)
+                                   (fn [& forms]
+                                     (ca/check (partial every? some?) forms)
+                                     (fn [ctors env]
+                                       (let [[ctors forms] (add-many ctors env forms)]
+                                         (update-current ctors conj (concat latest-fn forms)))))))
+                               (update env :stack conj (fn [ctors _env] (update-current ctors conj latest-fn)))))
+                ::ir/input (let [deps (::ir/deps inst)]
+                             (-> (reduce (fn [env arg] (walk env off idx dyn arg)) env deps)
+                               (update :stack collapse (count deps) vector)
+                               (update :input inc)
+                               (update :stack collapse 1
+                                 (fn [deps]
+                                   (fn [ctors env]
+                                     (let [[ctors deps] (add-many ctors env deps)]
+                                       (update-current ctors conj `(input-spawn ~frame ~deps))))))))
+                ::ir/output (-> env
+                              (walk off idx dyn (::ir/init inst))
+                              (snapshot :output)
+                              (update :output inc)
+                              (update :stack collapse 2
+                                (fn [form slot]
+                                  (fn [ctors env]
+                                    (-> ctors
+                                      (form env)
+                                      (update-current from-last-expr
+                                        (fn [x] `(make-output ~slot (check-failure '~(select-debug-info inst) ~x)))))))))
+                ::ir/variable (-> env
+                                (walk off idx dyn (::ir/init inst))
+                                (update :variable inc)
+                                (update :stack collapse 1
+                                  (fn [form]
+                                    (fn [ctors env]
+                                      (-> ctors
+                                        (form env)
+                                        (update-current from-last-expr (fn [x] (list `variable frame vars x))))))))
+                ::ir/source (-> env
+                              (update :source inc)
+                              (update :stack conj (fn [ctors _env]
+                                                    (update-current ctors conj (list `source frame vars)))))
+                ::ir/constant (-> env
+                                (merge empty-frame)
+                                (walk idx idx #{} (::ir/init inst))
+                                (snapshot (comp vec :free))
+                                (snapshot (comp reverse-index :static))
+                                (snapshot (comp reverse-index :dynamic))
+                                (snapshot :variable)
+                                (snapshot :source)
+                                (snapshot :constant)
+                                (snapshot :target)
+                                (snapshot :output)
+                                (snapshot :input)
+                                (update :free (partial into (:free env) (filter #(< % off))))
+                                (merge (select-keys env (keys (dissoc empty-frame :free))))
+                                (update :constant inc)
+                                (update :stack collapse 10
+                                  (fn [form free static dynamic variable-count source-count constant-count target-count output-count input-count]
+                                    (fn [ctors env]
+                                      (let [exprs (peek ctors)
+                                            ctors (-> (pop ctors)
+                                                    (conj [])
+                                                    (form (restore-free env free)))]
+                                        (-> ctors
+                                          (update-current from-last-expr
+                                            (fn [x] `(check-failure '~(select-debug-info inst) ~x)))
+                                          (update-current
+                                            (fn [exprs]
+                                              (list `constructor (list 'quote dynamic)
+                                                variable-count source-count
+                                                constant-count target-count
+                                                output-count input-count
+                                                (emit-exprs exprs))))
+                                          (conj exprs)
+                                          (update-current conj
+                                            (list `constant frame
+                                              (list (ctor-at (dec (count ctors)))
+                                                (capture-free env free) (mapv env static))))))))))
+                ::ir/target (let [deps (::ir/deps inst)]
+                              (-> (reduce (fn [env inst] (walk env idx idx #{} inst))
+                                    (merge env empty-frame) deps)
+                                (update :stack collapse (count deps) vector)
+                                (snapshot (comp vec :free))
+                                (snapshot (comp reverse-index :static))
+                                (snapshot (comp reverse-index :dynamic))
+                                (snapshot :variable)
+                                (snapshot :source)
+                                (snapshot :constant)
+                                (snapshot :target)
+                                (snapshot :output)
+                                (snapshot :input)
+                                (update :free (partial into (:free env) (filter #(< % off))))
+                                (merge (select-keys env (keys (dissoc empty-frame :free))))
+                                (update :target inc)
+                                (update :stack collapse 10
+                                  (fn [deps free static dynamic variable-count source-count constant-count target-count output-count input-count]
+                                    (fn [ctors env]
+                                      (let [exprs (peek ctors)
+                                            [ctors deps] (-> (pop ctors)
+                                                           (conj [])
+                                                           (add-many (restore-free env free) deps))]
+                                        (-> ctors
+                                          (update-current conj `(make-input ~frame ~deps))
+                                          (update-current
+                                            (fn [exprs]
+                                              (list `constructor (list 'quote dynamic)
+                                                variable-count source-count
+                                                constant-count target-count
+                                                output-count input-count
+                                                (emit-exprs exprs))))
+                                          (conj exprs)
+                                          (update-current conj
+                                            (list `target frame
+                                              (list (ctor-at (dec (count ctors)))
+                                                (capture-free env free) (mapv env static)))))))))))
+                (throw (ex-info (str "unknown instruction: " inst) {:inst inst}))))
+            empty-frame 0 0 #{} inst)
+         (snapshot (comp reverse-index :dynamic))
+         (snapshot :variable)
+         (snapshot :source)
+         (snapshot :constant)
+         (snapshot :target)
+         (snapshot :output)
+         (snapshot :input)
+         (:stack)
+         (collapse 8
+           (fn [form dynamic nvariable nsource nconstant ntarget noutput ninput]
+             (let [code (let [ctors (form [[]] {})]
+                          (list `let (into [] (comp (map-indexed (fn [i ctor] [(ctor-at i) ctor])) cat) (pop ctors))
+                            (emit-exprs (peek ctors))))
+                   ret {:fn code, :dynamic `'~dynamic, :nvariable nvariable :nsource nsource, :get-used-nodes `(fn [] ~nodes)
+                        :nconstant nconstant, :ntarget ntarget, :noutput noutput, :ninput ninput}]
+               (when (::lang/pprint-source e)
+                 (println "---" prefix "SOURCE ---")
+                 (pp/pprint ret))
+               ret)))
+         (peek)))))
 
 (defn- get-used-nodes-recursively [info]
   (loop [walked #{}, unwalked (seq [info])]

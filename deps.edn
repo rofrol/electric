@@ -4,6 +4,7 @@
  :deps  {com.cognitect/transit-clj      {:mvn/version "1.0.329"}
          com.cognitect/transit-cljs     {:mvn/version "0.8.269"}
          com.hyperfiddle/rcf            {:mvn/version "20220926-202227"}
+         dom-top/dom-top                {:mvn/version "1.0.9"}
          missionary/missionary          {:mvn/version "b.31"}
          org.clojure/clojure            {:mvn/version "1.12.0-alpha4"}
          org.clojure/clojurescript      {:mvn/version "1.11.60"}
@@ -13,6 +14,7 @@
 
  :aliases {:dev  {:extra-paths ["src-dev" "src-docs" "test" "scratch" "resources-demo"] ; for clj command
                   :extra-deps  {binaryage/devtools                                  {:mvn/version "1.0.6"} ; for chrome devtools pretty printing
+                                lambdaisland/deep-diff2                             {:mvn/version "2.10.211"}
                                 thheller/shadow-cljs                                {:mvn/version "2.22.10"}
                                 reagent/reagent                                     {:mvn/version "1.1.1"} ; for reagent interop demo
                                 ch.qos.logback/logback-classic                      {:mvn/version "1.2.11"} ; logging implementation
