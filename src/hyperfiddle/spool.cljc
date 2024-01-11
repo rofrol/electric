@@ -38,18 +38,19 @@
 (e/defn Spool
   "maintain a playback buffer of width `limit` in response to changing playback
 cursor `offset`"
-  [<buffer log offset limit]
-  (let [ ; differential flow. NOT rebuilt when offset changes.
-        target (+ offset limit)] ; front wants to be limit ahead of offset
-    (e/with-cycle [front (e/snapshot offset)] ; as offset slides, retain cursor state
+  [!spool logf cursor limit]
+  (check limit) (check cursor) (check (not (ratio? cursor))) (check logf)
 
+  (let [target (+ cursor limit)] ; front wants to be limit ahead of offset
+    (e/with-cycle [front (e/snapshot cursor)] ; as offset slides, retain cursor state
+      (check target) (check front) #_(println 'Spool front-n target-n)
       (cond
         (< front target) ; move forward
         (let [evict-n (- front limit) ; evict left-most element
               load-n front] ; load right-most element
           #_(println 'forward front '-> target 'load-n load-n 'evict-n evict-n)
-          (<buffer evict-n {} nil)
-          (<buffer load-n {} (log load-n)) ; assumes contiguous
+          (!spool evict-n {} nil)
+          (!spool load-n {} (logf load-n)) ; assumes contiguous
           (inc front))
 
         (= front target) ; caught up
@@ -57,10 +58,10 @@ cursor `offset`"
 
         (> front target) ; move backward
         (let [evict-n (dec front) ; evict right-most element
-              load-n (dec (- front limit))] ; load right-most element
+              load-n (dec (- front limit))] ; load left-most element
           #_(println 'backward front '-> target 'load-n load-n 'evict-n evict-n)
-          (<buffer evict-n {} nil)
-          (<buffer load-n {} (log load-n))
+          (!spool evict-n {} nil)
+          (!spool load-n {} (logf load-n))
           (dec front))))))
 
 (tests
